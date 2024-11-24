@@ -100,6 +100,7 @@ from . import (
     glm,
     glpn,
     gpt2,
+    ngpt,
     gpt_bigcode,
     gpt_neo,
     gpt_neox,
