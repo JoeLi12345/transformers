@@ -25,7 +25,7 @@ from ...utils import (
 
 
 _import_structure = {
-    "configuration_ngpt": ["NgptConfig", "NgptOnnxConfig"],
+    "configuration_ngpt_custom": ["Ngpt_customConfig", "Ngpt_customOnnxConfig"],
 }
 
 try:
@@ -34,15 +34,15 @@ try:
 except OptionalDependencyNotAvailable:
     pass
 else:
-    _import_structure["modeling_ngpt"] = [
-        "NgptDoubleHeadsModel",
-        "NgptForQuestionAnswering",
-        "NgptForSequenceClassification",
-        "NgptForTokenClassification",
-        "NgptLMHeadModel",
-        "NgptModel",
-        "NgptPreTrainedModel",
-        "load_tf_weights_in_ngpt",
+    _import_structure["modeling_ngpt_custom"] = [
+        "Ngpt_customDoubleHeadsModel",
+        "Ngpt_customForQuestionAnswering",
+        "Ngpt_customForSequenceClassification",
+        "Ngpt_customForTokenClassification",
+        "Ngpt_customLMHeadModel",
+        "Ngpt_customModel",
+        "Ngpt_customPreTrainedModel",
+        "load_tf_weights_in_ngpt_custom",
     ]
 
 try:
@@ -51,13 +51,13 @@ try:
 except OptionalDependencyNotAvailable:
     pass
 else:
-    _import_structure["modeling_tf_ngpt"] = [
-        "TFNgptDoubleHeadsModel",
-        "TFNgptForSequenceClassification",
-        "TFNgptLMHeadModel",
-        "TFNgptMainLayer",
-        "TFNgptModel",
-        "TFNgptPreTrainedModel",
+    _import_structure["modeling_tf_ngpt_custom"] = [
+        "TFNgpt_customDoubleHeadsModel",
+        "TFNgpt_customForSequenceClassification",
+        "TFNgpt_customLMHeadModel",
+        "TFNgpt_customMainLayer",
+        "TFNgpt_customModel",
+        "TFNgpt_customPreTrainedModel",
     ]
 
 try:
@@ -66,10 +66,10 @@ try:
 except OptionalDependencyNotAvailable:
     pass
 else:
-    _import_structure["tokenization_ngpt_tf"] = ["TFGPT2Tokenizer"]
+    _import_structure["tokenization_ngpt_custom_tf"] = ["TFGPT2Tokenizer"]
 
 if TYPE_CHECKING:
-    from .configuration_ngpt import NgptConfig, NgptOnnxConfig
+    from .configuration_ngpt_custom import Ngpt_customConfig, Ngpt_customOnnxConfig
 
     try:
         if not is_torch_available():
@@ -77,15 +77,15 @@ if TYPE_CHECKING:
     except OptionalDependencyNotAvailable:
         pass
     else:
-        from .modeling_ngpt import (
-            NgptDoubleHeadsModel,
-            NgptForQuestionAnswering,
-            NgptForSequenceClassification,
-            NgptForTokenClassification,
-            NgptLMHeadModel,
-            NgptModel,
-            NgptPreTrainedModel,
-            load_tf_weights_in_ngpt,
+        from .modeling_ngpt_custom import (
+            Ngpt_customDoubleHeadsModel,
+            Ngpt_customForQuestionAnswering,
+            Ngpt_customForSequenceClassification,
+            Ngpt_customForTokenClassification,
+            Ngpt_customLMHeadModel,
+            Ngpt_customModel,
+            Ngpt_customPreTrainedModel,
+            load_tf_weights_in_ngpt_custom,
         )
 
     try:
@@ -94,13 +94,13 @@ if TYPE_CHECKING:
     except OptionalDependencyNotAvailable:
         pass
     else:
-        from .modeling_tf_ngpt import (
-            TFNgptDoubleHeadsModel,
-            TFNgptForSequenceClassification,
-            TFNgptLMHeadModel,
-            TFNgptMainLayer,
-            TFNgptModel,
-            TFNgptPreTrainedModel,
+        from .modeling_tf_ngpt_custom import (
+            TFNgpt_customDoubleHeadsModel,
+            TFNgpt_customForSequenceClassification,
+            TFNgpt_customLMHeadModel,
+            TFNgpt_customMainLayer,
+            TFNgpt_customModel,
+            TFNgpt_customPreTrainedModel,
         )
 
     try:

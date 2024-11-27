@@ -460,6 +460,18 @@ _import_structure = {
         "GPT2Config",
         "GPT2Tokenizer",
     ],
+    "models.ngpt": [
+        "NgptConfig",
+       
+    ],
+    "models.ngpt": [
+        "NgptConfig",
+       
+    ],
+    "models.ngpt_custom": [
+        "Ngpt_customConfig",
+       
+    ],
     "models.gpt_bigcode": ["GPTBigCodeConfig"],
     "models.gpt_neo": ["GPTNeoConfig"],
     "models.gpt_neox": ["GPTNeoXConfig"],
@@ -2330,6 +2342,42 @@ else:
             "load_tf_weights_in_gpt2",
         ]
     )
+    _import_structure["models.ngpt"].extend(
+        [
+            "NgptDoubleHeadsModel",
+            "NgptForQuestionAnswering",
+            "NgptForSequenceClassification",
+            "NgptForTokenClassification",
+            "NgptLMHeadModel",
+            "NgptModel",
+            "NgptPreTrainedModel",
+            "load_tf_weights_in_ngpt",
+        ]
+    )
+    _import_structure["models.ngpt"].extend(
+        [
+            "NgptDoubleHeadsModel",
+            "NgptForQuestionAnswering",
+            "NgptForSequenceClassification",
+            "NgptForTokenClassification",
+            "NgptLMHeadModel",
+            "NgptModel",
+            "NgptPreTrainedModel",
+            "load_tf_weights_in_ngpt",
+        ]
+    )
+    _import_structure["models.ngpt_custom"].extend(
+        [
+            "Ngpt_customDoubleHeadsModel",
+            "Ngpt_customForQuestionAnswering",
+            "Ngpt_customForSequenceClassification",
+            "Ngpt_customForTokenClassification",
+            "Ngpt_customLMHeadModel",
+            "Ngpt_customModel",
+            "Ngpt_customPreTrainedModel",
+            "load_tf_weights_in_ngpt_custom",
+        ]
+    )
     _import_structure["models.gpt_bigcode"].extend(
         [
             "GPTBigCodeForCausalLM",
@@ -4186,6 +4234,36 @@ else:
             "TFGPT2PreTrainedModel",
         ]
     )
+    _import_structure["models.ngpt"].extend(
+        [
+            "TFNgptDoubleHeadsModel",
+            "TFNgptForSequenceClassification",
+            "TFNgptLMHeadModel",
+            "TFNgptMainLayer",
+            "TFNgptModel",
+            "TFNgptPreTrainedModel",
+        ]
+    )
+    _import_structure["models.ngpt"].extend(
+        [
+            "TFNgptDoubleHeadsModel",
+            "TFNgptForSequenceClassification",
+            "TFNgptLMHeadModel",
+            "TFNgptMainLayer",
+            "TFNgptModel",
+            "TFNgptPreTrainedModel",
+        ]
+    )
+    _import_structure["models.ngpt_custom"].extend(
+        [
+            "TFNgpt_customDoubleHeadsModel",
+            "TFNgpt_customForSequenceClassification",
+            "TFNgpt_customLMHeadModel",
+            "TFNgpt_customMainLayer",
+            "TFNgpt_customModel",
+            "TFNgpt_customPreTrainedModel",
+        ]
+    )
     _import_structure["models.gptj"].extend(
         [
             "TFGPTJForCausalLM",
@@ -4764,6 +4842,9 @@ else:
     )
     _import_structure["models.encoder_decoder"].append("FlaxEncoderDecoderModel")
     _import_structure["models.gpt2"].extend(["FlaxGPT2LMHeadModel", "FlaxGPT2Model", "FlaxGPT2PreTrainedModel"])
+    _import_structure["models.ngpt"].extend(["FlaxNgptLMHeadModel", "FlaxNgptModel", "FlaxNgptPreTrainedModel"])
+    _import_structure["models.ngpt"].extend(["FlaxNgptLMHeadModel", "FlaxNgptModel", "FlaxNgptPreTrainedModel"])
+    _import_structure["models.ngpt_custom"].extend(["FlaxNgpt_customLMHeadModel", "FlaxNgpt_customModel", "FlaxNgpt_customPreTrainedModel"])
     _import_structure["models.gpt_neo"].extend(
         ["FlaxGPTNeoForCausalLM", "FlaxGPTNeoModel", "FlaxGPTNeoPreTrainedModel"]
     )
@@ -5333,6 +5414,18 @@ if TYPE_CHECKING:
     from .models.gpt2 import (
         GPT2Config,
         GPT2Tokenizer,
+    )
+    from .models.ngpt import (
+        NgptConfig,
+       
+    )
+    from .models.ngpt import (
+        NgptConfig,
+       
+    )
+    from .models.ngpt_custom import (
+        Ngpt_customConfig,
+       
     )
     from .models.gpt_bigcode import (
         GPTBigCodeConfig,
@@ -7079,6 +7172,36 @@ if TYPE_CHECKING:
             GPT2PreTrainedModel,
             load_tf_weights_in_gpt2,
         )
+        from .models.ngpt import (
+            NgptDoubleHeadsModel,
+            NgptForQuestionAnswering,
+            NgptForSequenceClassification,
+            NgptForTokenClassification,
+            NgptLMHeadModel,
+            NgptModel,
+            NgptPreTrainedModel,
+            load_tf_weights_in_ngpt,
+        )
+        from .models.ngpt import (
+            NgptDoubleHeadsModel,
+            NgptForQuestionAnswering,
+            NgptForSequenceClassification,
+            NgptForTokenClassification,
+            NgptLMHeadModel,
+            NgptModel,
+            NgptPreTrainedModel,
+            load_tf_weights_in_ngpt,
+        )
+        from .models.ngpt_custom import (
+            Ngpt_customDoubleHeadsModel,
+            Ngpt_customForQuestionAnswering,
+            Ngpt_customForSequenceClassification,
+            Ngpt_customForTokenClassification,
+            Ngpt_customLMHeadModel,
+            Ngpt_customModel,
+            Ngpt_customPreTrainedModel,
+            load_tf_weights_in_ngpt_custom,
+        )
         from .models.gpt_bigcode import (
             GPTBigCodeForCausalLM,
             GPTBigCodeForSequenceClassification,
@@ -8539,6 +8662,30 @@ if TYPE_CHECKING:
             TFGPT2Model,
             TFGPT2PreTrainedModel,
         )
+        from .models.ngpt import (
+            TFNgptDoubleHeadsModel,
+            TFNgptForSequenceClassification,
+            TFNgptLMHeadModel,
+            TFNgptMainLayer,
+            TFNgptModel,
+            TFNgptPreTrainedModel,
+        )
+        from .models.ngpt import (
+            TFNgptDoubleHeadsModel,
+            TFNgptForSequenceClassification,
+            TFNgptLMHeadModel,
+            TFNgptMainLayer,
+            TFNgptModel,
+            TFNgptPreTrainedModel,
+        )
+        from .models.ngpt_custom import (
+            TFNgpt_customDoubleHeadsModel,
+            TFNgpt_customForSequenceClassification,
+            TFNgpt_customLMHeadModel,
+            TFNgpt_customMainLayer,
+            TFNgpt_customModel,
+            TFNgpt_customPreTrainedModel,
+        )
         from .models.gptj import (
             TFGPTJForCausalLM,
             TFGPTJForQuestionAnswering,
@@ -9015,6 +9162,21 @@ if TYPE_CHECKING:
             FlaxGPT2LMHeadModel,
             FlaxGPT2Model,
             FlaxGPT2PreTrainedModel,
+        )
+        from .models.ngpt import (
+            FlaxNgptLMHeadModel,
+            FlaxNgptModel,
+            FlaxNgptPreTrainedModel,
+        )
+        from .models.ngpt import (
+            FlaxNgptLMHeadModel,
+            FlaxNgptModel,
+            FlaxNgptPreTrainedModel,
+        )
+        from .models.ngpt_custom import (
+            FlaxNgpt_customLMHeadModel,
+            FlaxNgpt_customModel,
+            FlaxNgpt_customPreTrainedModel,
         )
         from .models.gpt_neo import (
             FlaxGPTNeoForCausalLM,

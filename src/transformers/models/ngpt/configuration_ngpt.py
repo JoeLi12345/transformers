@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright 2018 The OpenAI Team Authors and HuggingFace Inc. team.
+# Copyright 2024 The OpenAI Team Authors and HuggingFace Inc. team.
 # Copyright (c) 2018, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,7 +13,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""OpenAI GPT-2 configuration"""
+"""ngpt configuration"""
 
 from collections import OrderedDict
 from typing import Any, List, Mapping, Optional
@@ -27,12 +27,12 @@ from ...utils import logging
 logger = logging.get_logger(__name__)
 
 
-class GPT2Config(PretrainedConfig):
+class NgptConfig(PretrainedConfig):
     """
-    This is the configuration class to store the configuration of a [`GPT2Model`] or a [`TFGPT2Model`]. It is used to
+    This is the configuration class to store the configuration of a [`NgptModel`] or a [`TFNgptModel`]. It is used to
     instantiate a GPT-2 model according to the specified arguments, defining the model architecture. Instantiating a
     configuration with the defaults will yield a similar configuration to that of the GPT-2
-    [openai-community/gpt2](https://huggingface.co/openai-community/gpt2) architecture.
+    [](https://huggingface.co/) architecture.
 
     Configuration objects inherit from [`PretrainedConfig`] and can be used to control the model outputs. Read the
     documentation from [`PretrainedConfig`] for more information.
@@ -41,7 +41,7 @@ class GPT2Config(PretrainedConfig):
     Args:
         vocab_size (`int`, *optional*, defaults to 50257):
             Vocabulary size of the GPT-2 model. Defines the number of different tokens that can be represented by the
-            `inputs_ids` passed when calling [`GPT2Model`] or [`TFGPT2Model`].
+            `inputs_ids` passed when calling [`NgptModel`] or [`TFNgptModel`].
         n_positions (`int`, *optional*, defaults to 1024):
             The maximum sequence length that this model might ever be used with. Typically set this to something large
             just in case (e.g., 512 or 1024 or 2048).
@@ -66,8 +66,8 @@ class GPT2Config(PretrainedConfig):
         initializer_range (`float`, *optional*, defaults to 0.02):
             The standard deviation of the truncated_normal_initializer for initializing all weight matrices.
         summary_type (`string`, *optional*, defaults to `"cls_index"`):
-            Argument used when doing sequence summary, used in the models [`GPT2DoubleHeadsModel`] and
-            [`TFGPT2DoubleHeadsModel`].
+            Argument used when doing sequence summary, used in the models [`NgptDoubleHeadsModel`] and
+            [`TFNgptDoubleHeadsModel`].
 
             Has to be one of the following options:
 
@@ -77,23 +77,23 @@ class GPT2Config(PretrainedConfig):
                 - `"cls_index"`: Supply a Tensor of classification token position (like GPT/GPT-2).
                 - `"attn"`: Not implemented now, use multi-head attention.
         summary_use_proj (`bool`, *optional*, defaults to `True`):
-            Argument used when doing sequence summary, used in the models [`GPT2DoubleHeadsModel`] and
-            [`TFGPT2DoubleHeadsModel`].
+            Argument used when doing sequence summary, used in the models [`NgptDoubleHeadsModel`] and
+            [`TFNgptDoubleHeadsModel`].
 
             Whether or not to add a projection after the vector extraction.
         summary_activation (`str`, *optional*):
             Argument used when doing sequence summary. Used in for the multiple choice head in
-            [`GPT2DoubleHeadsModel`].
+            [`NgptDoubleHeadsModel`].
 
             Pass `"tanh"` for a tanh activation to the output, any other value will result in no activation.
         summary_proj_to_labels (`bool`, *optional*, defaults to `True`):
-            Argument used when doing sequence summary, used in the models [`GPT2DoubleHeadsModel`] and
-            [`TFGPT2DoubleHeadsModel`].
+            Argument used when doing sequence summary, used in the models [`NgptDoubleHeadsModel`] and
+            [`TFNgptDoubleHeadsModel`].
 
             Whether the projection outputs should have `config.num_labels` or `config.hidden_size` classes.
         summary_first_dropout (`float`, *optional*, defaults to 0.1):
-            Argument used when doing sequence summary, used in the models [`GPT2DoubleHeadsModel`] and
-            [`TFGPT2DoubleHeadsModel`].
+            Argument used when doing sequence summary, used in the models [`NgptDoubleHeadsModel`] and
+            [`TFNgptDoubleHeadsModel`].
 
             The dropout ratio to be used after the projection and activation.
         scale_attn_weights (`bool`, *optional*, defaults to `True`):
@@ -113,19 +113,19 @@ class GPT2Config(PretrainedConfig):
     Example:
 
     ```python
-    >>> from transformers import GPT2Config, GPT2Model
+    >>> from transformers import NgptConfig, NgptModel
 
-    >>> # Initializing a GPT2 configuration
-    >>> configuration = GPT2Config()
+    >>> # Initializing a Ngpt configuration
+    >>> configuration = NgptConfig()
 
     >>> # Initializing a model (with random weights) from the configuration
-    >>> model = GPT2Model(configuration)
+    >>> model = NgptModel(configuration)
 
     >>> # Accessing the model configuration
     >>> configuration = model.config
     ```"""
 
-    model_type = "gpt2"
+    model_type = "ngpt"
     keys_to_ignore_at_inference = ["past_key_values"]
     attribute_map = {
         "hidden_size": "n_embd",
@@ -142,7 +142,7 @@ class GPT2Config(PretrainedConfig):
         n_layer=12,
         n_head=12,
         n_inner=None,
-        activation_function="gelu_new",
+        activation_function="silu",
         resid_pdrop=0.1,
         embd_pdrop=0.1,
         attn_pdrop=0.1,
@@ -186,12 +186,15 @@ class GPT2Config(PretrainedConfig):
         self.bos_token_id = bos_token_id
         self.eos_token_id = eos_token_id
 
+        '''
+        ADD BASE SCALING FACTOR (section 2.2.2)
+        '''
         self.base_scale = 1.0 / (self.n_embd ** 0.5)
 
         super().__init__(bos_token_id=bos_token_id, eos_token_id=eos_token_id, **kwargs)
 
 
-class GPT2OnnxConfig(OnnxConfigWithPast):
+class NgptOnnxConfig(OnnxConfigWithPast):
     def __init__(
         self,
         config: PretrainedConfig,

@@ -101,6 +101,7 @@ from . import (
     glpn,
     gpt2,
     ngpt,
+    ngpt_custom,
     gpt_bigcode,
     gpt_neo,
     gpt_neox,

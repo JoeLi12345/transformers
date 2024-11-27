@@ -508,6 +508,12 @@
         title: Nemotron
       - local: model_doc/nezha
         title: NEZHA
+      - local: model_doc/ngpt
+        title: ngpt
+      - local: model_doc/ngpt
+        title: ngpt
+      - local: model_doc/ngpt_custom
+        title: ngpt_custom
       - local: model_doc/nllb
         title: NLLB
       - local: model_doc/nllb-moe

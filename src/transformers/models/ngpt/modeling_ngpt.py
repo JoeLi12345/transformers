@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright 2018 The OpenAI Team Authors and HuggingFace Inc. team.
+# Copyright 2024 The OpenAI Team Authors and HuggingFace Inc. team.
 # Copyright (c) 2018, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,7 +13,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""PyTorch OpenAI GPT-2 model."""
+"""PyTorch ngpt model."""
 
 import math
 import os
@@ -51,7 +51,7 @@ from ...utils import (
     replace_return_docstrings,
 )
 from ...utils.model_parallel_utils import assert_device_map, get_device_map
-from .configuration_gpt2 import GPT2Config
+from .configuration_ngpt import NgptConfig
 
 
 if is_flash_attn_2_available():
@@ -60,11 +60,12 @@ if is_flash_attn_2_available():
 
 logger = logging.get_logger(__name__)
 
-_CHECKPOINT_FOR_DOC = "openai-community/gpt2"
-_CONFIG_FOR_DOC = "GPT2Config"
+_CHECKPOINT_FOR_DOC = ""
+_CONFIG_FOR_DOC = "NgptConfig"
 
 
-def load_tf_weights_in_gpt2(model, config, gpt2_checkpoint_path):
+# Copied from transformers.models.gpt2.modeling_gpt2.load_tf_weights_in_gpt2 with gpt2->ngpt
+def load_tf_weights_in_ngpt(model, config, ngpt_checkpoint_path):
     """Load tf checkpoints in a pytorch model"""
     try:
         import re
@@ -76,7 +77,7 @@ def load_tf_weights_in_gpt2(model, config, gpt2_checkpoint_path):
             "https://www.tensorflow.org/install/ for installation instructions."
         )
         raise
-    tf_path = os.path.abspath(gpt2_checkpoint_path)
+    tf_path = os.path.abspath(ngpt_checkpoint_path)
     logger.info(f"Converting TensorFlow checkpoint from {tf_path}")
     # Load weights from TF model
     init_vars = tf.train.list_variables(tf_path)
@@ -119,8 +120,16 @@ def load_tf_weights_in_gpt2(model, config, gpt2_checkpoint_path):
         pointer.data = torch.from_numpy(array)
     return model
 
+'''
+ADD normalization function
+'''
+def justnorm(x):
+    #return F.normalize(x, p=2, dim=-1)
+    res = x / x.norm(p=2, dim=-1, keepdim=True)
+    return res
 
-class GPT2Attention(nn.Module):
+# Copied from transformers.models.gpt2.modeling_gpt2.GPT2Attention with GPT2->Ngpt
+class NgptAttention(nn.Module):
     def __init__(self, config, is_cross_attention=False, layer_idx=None):
         super().__init__()
         self.config = config
@@ -164,6 +173,13 @@ class GPT2Attention(nn.Module):
         self.is_causal = True
 
         self.pruned_heads = set()
+
+        '''
+        ADD SQK SCALING PARAMETER FROM 2.3.2
+        '''
+        self.sqk_init_value = 1.0       
+        self.sqk_init_scaling = config.base_scale
+        self.sqk = torch.nn.Parameter(self.sqk_init_scaling*torch.ones(config.n_embd, dtype=torch.float32))
 
     def prune_heads(self, heads):
         if len(heads) == 0:
@@ -303,7 +319,7 @@ class GPT2Attention(nn.Module):
             if not hasattr(self, "q_attn"):
                 raise ValueError(
                     "If class is used as cross attention, the weights `q_attn` have to be defined. "
-                    "Please make sure to instantiate class with `GPT2Attention(..., is_cross_attention=True)`."
+                    "Please make sure to instantiate class with `NgptAttention(..., is_cross_attention=True)`."
                 )
 
             query = self.q_attn(hidden_states)
@@ -342,14 +358,14 @@ class GPT2Attention(nn.Module):
         return outputs  # a, present, (attentions)
 
 
-class GPT2FlashAttention2(GPT2Attention):
+# Copied from transformers.models.gpt2.modeling_gpt2.GPT2FlashAttention2 with GPT2->Ngpt
+class NgptFlashAttention2(NgptAttention):
     """
-    GPT2 flash attention module. This module inherits from `GPT2Attention` as the weights of the module stays
+    Ngpt flash attention module. This module inherits from `NgptAttention` as the weights of the module stays
     untouched. The only required change would be on the forward pass where it needs to correctly call the public API of
     flash attention and deal with padding tokens in case the input contains any of them.
     """
 
-    # Copied from transformers.models.llama.modeling_llama.LlamaFlashAttention2.__init__
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -374,7 +390,7 @@ class GPT2FlashAttention2(GPT2Attention):
             if not hasattr(self, "q_attn"):
                 raise ValueError(
                     "If class is used as cross attention, the weights `q_attn` have to be defined. "
-                    "Please make sure to instantiate class with `GPT2Attention(..., is_cross_attention=True)`."
+                    "Please make sure to instantiate class with `NgptAttention(..., is_cross_attention=True)`."
                 )
 
             query = self.q_attn(hidden_states)
@@ -455,10 +471,11 @@ class GPT2FlashAttention2(GPT2Attention):
         return outputs
 
 
-class GPT2SdpaAttention(GPT2Attention):
+# Copied from transformers.models.gpt2.modeling_gpt2.GPT2SdpaAttention with GPT2->Ngpt
+class NgptSdpaAttention(NgptAttention):
     """
-    GPT2 attention module using torch.nn.functional.scaled_dot_product_attention. This module inherits from
-    `GPT2Attention` as the weights of the module stays untouched. The only changes are on the forward pass
+    Ngpt attention module using torch.nn.functional.scaled_dot_product_attention. This module inherits from
+    `NgptAttention` as the weights of the module stays untouched. The only changes are on the forward pass
     to adapt to the SDPA API.
     """
 
@@ -484,7 +501,7 @@ class GPT2SdpaAttention(GPT2Attention):
     ) -> Tuple[Union[torch.Tensor, Tuple[torch.Tensor]], ...]:
         if output_attentions or head_mask is not None:
             logger.warning_once(
-                "`GPT2SdpaAttention` is used but `torch.nn.functional.scaled_dot_product_attention` does not support "
+                "`NgptSdpaAttention` is used but `torch.nn.functional.scaled_dot_product_attention` does not support "
                 "`output_attentions=True` or `head_mask`. Falling back to the manual attention implementation, but "
                 "specifying the manual implementation will be required from Transformers version v5.0.0 onwards. "
                 'This warning can be removed using the argument `attn_implementation="eager"` when loading the model.'
@@ -508,7 +525,7 @@ class GPT2SdpaAttention(GPT2Attention):
             if not hasattr(self, "q_attn"):
                 raise ValueError(
                     "If class is used as cross attention, the weights `q_attn` have to be defined. "
-                    "Please make sure to instantiate class with `GPT2SdpaAttention(..., is_cross_attention=True)`."
+                    "Please make sure to instantiate class with `NgptSdpaAttention(..., is_cross_attention=True)`."
                 )
 
             query = self.q_attn(hidden_states)
@@ -520,6 +537,17 @@ class GPT2SdpaAttention(GPT2Attention):
         query = self._split_heads(query, self.num_heads, self.head_dim)
         key = self._split_heads(key, self.num_heads, self.head_dim)
         value = self._split_heads(value, self.num_heads, self.head_dim)
+
+        '''
+        ADD 2.3.2 SCALING PARAMETER
+        '''
+        sqk = (self.sqk * (self.sqk_init_value/self.sqk_init_scaling)).view(1, 1, self.num_heads, self.head_dim)
+        sqk = torch.broadcast_to(sqk, (query.size(dim=0), query.size(dim=2), self.num_heads, self.head_dim))
+        sqk = torch.transpose(sqk, 1, 2)
+        print("sqk and q", sqk.size(), query.size())
+        query = sqk * justnorm(query)
+        key = sqk * justnorm(key)
+        
 
         # Optional kv caching
         if layer_past is not None:
@@ -549,6 +577,7 @@ class GPT2SdpaAttention(GPT2Attention):
             attn_mask=attention_mask,
             dropout_p=self.attn_dropout.p if self.training else 0.0,
             is_causal=is_causal,
+            scale = (self.head_dim ** 0.5) # SOFTMAX SCALING FACTOR AS MENTIONED IN SECTION 2.3.2
         )
 
         # Reshape outputs
@@ -562,32 +591,49 @@ class GPT2SdpaAttention(GPT2Attention):
         return attn_output, present, None
 
 
-class GPT2MLP(nn.Module):
+# Copied from transformers.models.gpt2.modeling_gpt2.GPT2MLP with GPT2->Ngpt
+class NgptMLP(nn.Module):
     def __init__(self, intermediate_size, config):
         super().__init__()
-        embed_dim = config.hidden_size
-        self.c_fc = Conv1D(intermediate_size, embed_dim)
-        self.c_proj = Conv1D(embed_dim, intermediate_size)
+        self.embed_dim = config.hidden_size
+        #self.c_fc = Conv1D(intermediate_size, embed_dim)
+        self.c_fc = Conv1D(2 * intermediate_size, self.embed_dim)
+        self.c_proj = Conv1D(self.embed_dim, intermediate_size)
         self.act = ACT2FN[config.activation_function]
         self.dropout = nn.Dropout(config.resid_pdrop)
 
+        self.suv_init_value = 1.0
+        self.suv_init_scaling = 1.0
+        self.su = torch.nn.Parameter(self.suv_init_scaling*torch.ones(intermediate_size, dtype=torch.float32))
+        self.sv = torch.nn.Parameter(self.suv_init_scaling*torch.ones(intermediate_size, dtype=torch.float32))
+
     def forward(self, hidden_states: Optional[Tuple[torch.FloatTensor]]) -> torch.FloatTensor:
+        '''
+        IMPLEMENT SWIGLU in original transformer SECTION 2.4.1
+        '''
         hidden_states = self.c_fc(hidden_states)
-        hidden_states = self.act(hidden_states)
+        u, v = torch.chunk(hidden_states, 2, dim=-1)
+        '''
+        IMPLEMENT SECTION 2.4.2
+        '''
+        u = self.su * (self.suv_init_value/self.suv_init_scaling)
+        v = self.sv * (self.suv_init_value/self.suv_init_scaling) * (self.embed_dim ** 0.5)
+        hidden_states = u * self.act(v)
+        #hidden_states = self.act(hidden_states)
         hidden_states = self.c_proj(hidden_states)
-        hidden_states = self.dropout(hidden_states)
+        #hidden_states = self.dropout(hidden_states)
         return hidden_states
 
 
-GPT2_ATTENTION_CLASSES = {"eager": GPT2Attention, "flash_attention_2": GPT2FlashAttention2, "sdpa": GPT2SdpaAttention}
+NGPT_ATTENTION_CLASSES = {"eager": NgptAttention, "flash_attention_2": NgptFlashAttention2, "sdpa": NgptSdpaAttention}
 
 
-class GPT2Block(nn.Module):
+class NgptBlock(nn.Module):
     def __init__(self, config, layer_idx=None):
         super().__init__()
         hidden_size = config.hidden_size
         inner_dim = config.n_inner if config.n_inner is not None else 4 * hidden_size
-        attention_class = GPT2_ATTENTION_CLASSES[config._attn_implementation]
+        attention_class = NGPT_ATTENTION_CLASSES[config._attn_implementation]
 
         self.ln_1 = nn.LayerNorm(hidden_size, eps=config.layer_norm_epsilon)
         self.attn = attention_class(config=config, layer_idx=layer_idx)
@@ -597,20 +643,20 @@ class GPT2Block(nn.Module):
             self.crossattention = attention_class(config=config, is_cross_attention=True, layer_idx=layer_idx)
             self.ln_cross_attn = nn.LayerNorm(hidden_size, eps=config.layer_norm_epsilon)
         
+        '''
+        ADD ALPHA PARAMETERS IN SECTION 2.2.2 OF THE PAPER
+        '''
         self.attn_alpha_init_value = 0.05
         self.attn_alpha_init_scaling = config.base_scale
-        self.attn_alpha = torch.nn.Parameter(self.attn_alpha_init_scaling*torch.ones(self.config.n_embd, dtype=torch.float32))
+        self.attn_alpha = torch.nn.Parameter(self.attn_alpha_init_scaling*torch.ones(config.n_embd, dtype=torch.float32))
 
         self.mlp_alpha_init_value = 0.05
         self.mlp_alpha_init_scaling = config.base_scale
-        self.mlp_alpha = torch.nn.Parameter(self.mlp_alpha_init_scaling*torch.ones(self.config.n_embd, dtype=torch.float32))
+        self.mlp_alpha = torch.nn.Parameter(self.mlp_alpha_init_scaling*torch.ones(config.n_embd, dtype=torch.float32))
 
-        self.mlp = GPT2MLP(inner_dim, config)
+        self.mlp = NgptMLP(inner_dim, config)
+
     
-    def justnorm(self, x):
-        #return F.normalize(x, p=2, dim=-1)
-        res = x / x.norm(p=2, dim=-1, keepdim=True)
-        return res
 
     def forward(
         self,
@@ -649,16 +695,11 @@ class GPT2Block(nn.Module):
         '''
         lr = self.attn_alpha * (self.attn_alpha_init_value / self.attn_alpha_init_scaling)
         lr = torch.abs(lr)
-        A_norm = self.justnorm(hidden_states) # normally, normalization is not needed
-        B_norm = self.justnorm(attn_output)
+        A_norm = justnorm(hidden_states) # normally, normalization is not needed
+        B_norm = justnorm(attn_output)
         res = A_norm + lr * (B_norm - A_norm)
-        hidden_states = self.justnorm(res)
+        hidden_states = justnorm(res)
 
-        print(hidden_states.size())
-
-        '''
-        TODO: FIGURE OUT IF THERE IS CROSS ATTENTION IN DECODER-ONLY MODEL
-        '''
         if encoder_hidden_states is not None:
             # add one self-attention block for cross-attention
             if not hasattr(self, "crossattention"):
@@ -697,10 +738,12 @@ class GPT2Block(nn.Module):
         '''
         lr = self.mlp_alpha * (self.mlp_alpha_init_value / self.mlp_alpha_init_scaling)
         lr = torch.abs(lr)
-        A_norm = self.justnorm(hidden_states) # normally, normalization is not needed
-        B_norm = self.justnorm(h_mlp)
+        A_norm = justnorm(hidden_states) # normally, normalization is not needed
+        B_norm = justnorm(h_mlp)
         res = A_norm + lr * (B_norm - A_norm)
-        hidden_states = self.justnorm(res)
+        hidden_states = justnorm(res)
+        
+        print(hidden_states.size())
 
         if use_cache:
             outputs = (hidden_states,) + outputs
@@ -710,18 +753,19 @@ class GPT2Block(nn.Module):
         return outputs  # hidden_states, present, (attentions, cross_attentions)
 
 
-class GPT2PreTrainedModel(PreTrainedModel):
+# Copied from transformers.models.gpt2.modeling_gpt2.GPT2PreTrainedModel with GPT2->Ngpt,gpt2->ngpt,OpenAI GPT-2->ngpt
+class NgptPreTrainedModel(PreTrainedModel):
     """
     An abstract class to handle weights initialization and a simple interface for downloading and loading pretrained
     models.
     """
 
-    config_class = GPT2Config
-    load_tf_weights = load_tf_weights_in_gpt2
+    config_class = NgptConfig
+    load_tf_weights = load_tf_weights_in_ngpt
     base_model_prefix = "transformer"
     is_parallelizable = True
     supports_gradient_checkpointing = True
-    _no_split_modules = ["GPT2Block"]
+    _no_split_modules = ["NgptBlock"]
     _skip_keys_device_placement = "past_key_values"
     _supports_flash_attn_2 = True
     _supports_sdpa = True
@@ -745,7 +789,7 @@ class GPT2PreTrainedModel(PreTrainedModel):
             module.bias.data.zero_()
             module.weight.data.fill_(1.0)
 
-        # Reinitialize selected weights subject to the OpenAI GPT-2 Paper Scheme:
+        # Reinitialize selected weights subject to the ngpt Paper Scheme:
         #   > A modified initialization which accounts for the accumulation on the residual path with model depth. Scale
         #   > the weights of residual layers at initialization by a factor of 1/√N where N is the # of residual layers.
         #   >   -- GPT-2 :: https://openai.com/blog/better-language-models/
@@ -758,7 +802,8 @@ class GPT2PreTrainedModel(PreTrainedModel):
 
 
 @dataclass
-class GPT2DoubleHeadsModelOutput(ModelOutput):
+# Copied from transformers.models.gpt2.modeling_gpt2.GPT2DoubleHeadsModelOutput with GPT2->Ngpt
+class NgptDoubleHeadsModelOutput(ModelOutput):
     """
     Base class for outputs of models predicting if two sentences are consecutive or not.
 
@@ -786,7 +831,7 @@ class GPT2DoubleHeadsModelOutput(ModelOutput):
             Tuple of `torch.FloatTensor` (one for each layer) of shape `(batch_size, num_heads, sequence_length,
             sequence_length)`.
 
-            GPT2Attentions weights after the attention softmax, used to compute the weighted average in the
+            NgptAttentions weights after the attention softmax, used to compute the weighted average in the
             self-attention heads.
     """
 
@@ -799,7 +844,7 @@ class GPT2DoubleHeadsModelOutput(ModelOutput):
     attentions: Optional[Tuple[torch.FloatTensor]] = None
 
 
-GPT2_START_DOCSTRING = r"""
+NGPT_START_DOCSTRING = r"""
 
     This model inherits from [`PreTrainedModel`]. Check the superclass documentation for the generic methods the
     library implements for all its model (such as downloading or saving, resizing the input embeddings, pruning heads
@@ -810,12 +855,12 @@ GPT2_START_DOCSTRING = r"""
     and behavior.
 
     Parameters:
-        config ([`GPT2Config`]): Model configuration class with all the parameters of the model.
+        config ([`NgptConfig`]): Model configuration class with all the parameters of the model.
             Initializing with a config file does not load the weights associated with the model, only the
             configuration. Check out the [`~PreTrainedModel.from_pretrained`] method to load the model weights.
 """
 
-GPT2_INPUTS_DOCSTRING = r"""
+NGPT_INPUTS_DOCSTRING = r"""
     Args:
         input_ids (`torch.LongTensor` of shape `(batch_size, input_ids_length)`):
             `input_ids_length` = `sequence_length` if `past_key_values` is `None` else
@@ -892,19 +937,19 @@ PARALLELIZE_DOCSTRING = r"""
         device_map (`Dict[int, list]`, *optional*):
             A dictionary that maps attention modules to devices. Note that the embedding module and LMHead are always
             automatically mapped to the first device (for esoteric reasons). That means that the first device should
-            have fewer attention modules mapped to it than other devices. For reference, the gpt2 models have the
+            have fewer attention modules mapped to it than other devices. For reference, the ngpt models have the
             following number of attention modules:
 
-                - openai-community/gpt2: 12
-                - openai-community/gpt2-medium: 24
-                - openai-community/gpt2-large: 36
-                - openai-community/gpt2-xl: 48
+                - : 12
+                - -medium: 24
+                - -large: 36
+                - -xl: 48
 
     Example:
 
     ```python
-    # Here is an example of a device map on a machine with 4 GPUs using gpt2-xl, which has a total of 48 attention modules:
-    model = GPT2LMHeadModel.from_pretrained("openai-community/gpt2-xl")
+    # Here is an example of a device map on a machine with 4 GPUs using ngpt-xl, which has a total of 48 attention modules:
+    model = NgptLMHeadModel.from_pretrained("-xl")
     device_map = {
         0: [0, 1, 2, 3, 4, 5, 6, 7, 8],
         1: [9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21],
@@ -920,8 +965,8 @@ DEPARALLELIZE_DOCSTRING = r"""
     Example:
 
     ```python
-    # On a 4 GPU machine with openai-community/gpt2-large:
-    model = GPT2LMHeadModel.from_pretrained("openai-community/gpt2-large")
+    # On a 4 GPU machine with -large:
+    model = NgptLMHeadModel.from_pretrained("-large")
     device_map = {
         0: [0, 1, 2, 3, 4, 5, 6, 7],
         1: [8, 9, 10, 11, 12, 13, 14, 15],
@@ -935,14 +980,13 @@ DEPARALLELIZE_DOCSTRING = r"""
 
 
 @add_start_docstrings(
-    "The bare GPT2 Model transformer outputting raw hidden-states without any specific head on top.",
-    GPT2_START_DOCSTRING,
+    "The bare NGPT Model transformer outputting raw hidden-states without any specific head on top.",
+    NGPT_START_DOCSTRING,
 )
-class GPT2Model(GPT2PreTrainedModel):
+class NgptModel(NgptPreTrainedModel):
     _supports_param_buffer_assignment = False
 
     def __init__(self, config):
-        exit(0)
         super().__init__(config)
 
         self.embed_dim = config.hidden_size
@@ -951,7 +995,7 @@ class GPT2Model(GPT2PreTrainedModel):
         self.wpe = nn.Embedding(config.max_position_embeddings, self.embed_dim)
 
         self.drop = nn.Dropout(config.embd_pdrop)
-        self.h = nn.ModuleList([GPT2Block(config, layer_idx=i) for i in range(config.num_hidden_layers)])
+        self.h = nn.ModuleList([NgptBlock(config, layer_idx=i) for i in range(config.num_hidden_layers)])
         self.ln_f = nn.LayerNorm(self.embed_dim, eps=config.layer_norm_epsilon)
 
         # Model parallel
@@ -967,7 +1011,7 @@ class GPT2Model(GPT2PreTrainedModel):
     def parallelize(self, device_map=None):
         # Check validity of device_map
         warnings.warn(
-            "`GPT2Model.parallelize` is deprecated and will be removed in v5 of Transformers, you should load your"
+            "`NgptModel.parallelize` is deprecated and will be removed in v5 of Transformers, you should load your"
             " model with `device_map='balanced'` in the call to `from_pretrained`. You can also provide your own"
             " `device_map` but it needs to be a dictionary module_name to device, so for instance {'h.0': 0, 'h.1': 1,"
             " ...}",
@@ -1020,7 +1064,7 @@ class GPT2Model(GPT2PreTrainedModel):
         for layer, heads in heads_to_prune.items():
             self.h[layer].attn.prune_heads(heads)
 
-    @add_start_docstrings_to_model_forward(GPT2_INPUTS_DOCSTRING)
+    @add_start_docstrings_to_model_forward(NGPT_INPUTS_DOCSTRING)
     @add_code_sample_docstrings(
         checkpoint=_CHECKPOINT_FOR_DOC,
         output_type=BaseModelOutputWithPastAndCrossAttentions,
@@ -1205,7 +1249,10 @@ class GPT2Model(GPT2PreTrainedModel):
                     if i == v[-1] and "cuda:" + str(k) != self.last_device:
                         hidden_states = hidden_states.to("cuda:" + str(k + 1))
 
-        hidden_states = self.ln_f(hidden_states)
+        '''
+        REMOVE LAYER NORM
+        '''
+        #hidden_states = self.ln_f(hidden_states)
 
         hidden_states = hidden_states.view(output_shape)
         # Add last hidden state
@@ -1230,22 +1277,29 @@ class GPT2Model(GPT2PreTrainedModel):
 
 @add_start_docstrings(
     """
-    The GPT2 Model transformer with a language modeling head on top (linear layer with weights tied to the input
+    The NGPT Model transformer with a language modeling head on top (linear layer with weights tied to the input
     embeddings).
     """,
-    GPT2_START_DOCSTRING,
+    NGPT_START_DOCSTRING,
 )
-class GPT2LMHeadModel(GPT2PreTrainedModel, GenerationMixin):
+class NgptLMHeadModel(NgptPreTrainedModel, GenerationMixin):
     _tied_weights_keys = ["lm_head.weight"]
 
     def __init__(self, config):
         super().__init__(config)
-        self.transformer = GPT2Model(config)
+        self.transformer = NgptModel(config)
         self.lm_head = nn.Linear(config.n_embd, config.vocab_size, bias=False)
 
         # Model parallel
         self.model_parallel = False
         self.device_map = None
+
+        '''
+        ADD CUSTOM SCALING IN SECTION 2.1
+        '''
+        self.sz_init_value = 1.00
+        self.sz_init_scaling = config.base_scale
+        self.sz = torch.nn.Parameter(self.sz_init_scaling*torch.ones(config.vocab_size, dtype=torch.float32))
 
         # Initialize weights and apply final processing
         self.post_init()
@@ -1253,7 +1307,7 @@ class GPT2LMHeadModel(GPT2PreTrainedModel, GenerationMixin):
     @add_start_docstrings(PARALLELIZE_DOCSTRING)
     def parallelize(self, device_map=None):
         warnings.warn(
-            "`GPT2LMHeadModel.parallelize` is deprecated and will be removed in v5 of Transformers, you should load"
+            "`NgptLMHeadModel.parallelize` is deprecated and will be removed in v5 of Transformers, you should load"
             " your model with `device_map='balanced'` in the call to `from_pretrained`. You can also provide your own"
             " `device_map` but it needs to be a dictionary module_name to device, so for instance {'transformer.h.0':"
             " 0, 'transformer.h.1': 1, ...}",
@@ -1287,7 +1341,7 @@ class GPT2LMHeadModel(GPT2PreTrainedModel, GenerationMixin):
     def set_output_embeddings(self, new_embeddings):
         self.lm_head = new_embeddings
 
-    @add_start_docstrings_to_model_forward(GPT2_INPUTS_DOCSTRING)
+    @add_start_docstrings_to_model_forward(NGPT_INPUTS_DOCSTRING)
     @add_code_sample_docstrings(
         checkpoint=_CHECKPOINT_FOR_DOC,
         output_type=CausalLMOutputWithCrossAttentions,
@@ -1342,6 +1396,14 @@ class GPT2LMHeadModel(GPT2PreTrainedModel, GenerationMixin):
 
         lm_logits = self.lm_head(hidden_states)
 
+        '''
+        IMPLEMENT LOGIT SCALING IN SECTION 2.1
+        '''
+        sz = self.sz * (self.sz_init_value/self.sz_init_scaling)
+        lm_logits = sz * lm_logits
+        print("LOGITS")
+        print(sz.size(), lm_logits.size())
+
         loss = None
         if labels is not None:
             # move labels to correct device to enable model parallelism
@@ -1383,20 +1445,20 @@ class GPT2LMHeadModel(GPT2PreTrainedModel, GenerationMixin):
 
 @add_start_docstrings(
     """
-The GPT2 Model transformer with a language modeling and a multiple-choice classification head on top e.g. for
+The Ngpt Model transformer with a language modeling and a multiple-choice classification head on top e.g. for
 RocStories/SWAG tasks. The two heads are two linear layers. The language modeling head has its weights tied to the
 input embeddings, the classification head takes as input the input of a specified classification token index in the
 input sequence).
 """,
-    GPT2_START_DOCSTRING,
+    NGPT_START_DOCSTRING,
 )
-class GPT2DoubleHeadsModel(GPT2PreTrainedModel, GenerationMixin):
+class NgptDoubleHeadsModel(NgptPreTrainedModel, GenerationMixin):
     _tied_weights_keys = ["lm_head.weight"]
 
     def __init__(self, config):
         super().__init__(config)
         config.num_labels = 1
-        self.transformer = GPT2Model(config)
+        self.transformer = NgptModel(config)
         self.lm_head = nn.Linear(config.n_embd, config.vocab_size, bias=False)
         self.multiple_choice_head = SequenceSummary(config)
 
@@ -1410,7 +1472,7 @@ class GPT2DoubleHeadsModel(GPT2PreTrainedModel, GenerationMixin):
     @add_start_docstrings(PARALLELIZE_DOCSTRING)
     def parallelize(self, device_map=None):
         warnings.warn(
-            "`GPT2DoubleHeadsModel.parallelize` is deprecated and will be removed in v5 of Transformers, you should"
+            "`NgptDoubleHeadsModel.parallelize` is deprecated and will be removed in v5 of Transformers, you should"
             " load your model with `device_map='balanced'` in the call to `from_pretrained`. You can also provide your"
             " own `device_map` but it needs to be a dictionary module_name to device, so for instance"
             " {'transformer.h.0': 0, 'transformer.h.1': 1, ...}",
@@ -1446,8 +1508,8 @@ class GPT2DoubleHeadsModel(GPT2PreTrainedModel, GenerationMixin):
     def set_output_embeddings(self, new_embeddings):
         self.lm_head = new_embeddings
 
-    @add_start_docstrings_to_model_forward(GPT2_INPUTS_DOCSTRING)
-    @replace_return_docstrings(output_type=GPT2DoubleHeadsModelOutput, config_class=_CONFIG_FOR_DOC)
+    @add_start_docstrings_to_model_forward(NGPT_INPUTS_DOCSTRING)
+    @replace_return_docstrings(output_type=NgptDoubleHeadsModelOutput, config_class=_CONFIG_FOR_DOC)
     def forward(
         self,
         input_ids: Optional[torch.LongTensor] = None,
@@ -1465,7 +1527,7 @@ class GPT2DoubleHeadsModel(GPT2PreTrainedModel, GenerationMixin):
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
         **kwargs,
-    ) -> Union[Tuple, GPT2DoubleHeadsModelOutput]:
+    ) -> Union[Tuple, NgptDoubleHeadsModelOutput]:
         r"""
         mc_token_ids (`torch.LongTensor` of shape `(batch_size, num_choices)`, *optional*, default to index of the last token of the input):
             Index of the classification token in each input sequence. Selected in the range `[0, input_ids.size(-1) -
@@ -1484,10 +1546,10 @@ class GPT2DoubleHeadsModel(GPT2PreTrainedModel, GenerationMixin):
 
         ```python
         >>> import torch
-        >>> from transformers import AutoTokenizer, GPT2DoubleHeadsModel
+        >>> from transformers import AutoTokenizer, NgptDoubleHeadsModel
 
-        >>> tokenizer = AutoTokenizer.from_pretrained("openai-community/gpt2")
-        >>> model = GPT2DoubleHeadsModel.from_pretrained("openai-community/gpt2")
+        >>> tokenizer = AutoTokenizer.from_pretrained("")
+        >>> model = NgptDoubleHeadsModel.from_pretrained("")
 
         >>> # Add a [CLS] to the vocabulary (we should train it also!)
         >>> num_added_tokens = tokenizer.add_special_tokens({"cls_token": "[CLS]"})
@@ -1549,7 +1611,7 @@ class GPT2DoubleHeadsModel(GPT2PreTrainedModel, GenerationMixin):
                 output = (mc_loss,) + output
             return ((lm_loss,) + output) if lm_loss is not None else output
 
-        return GPT2DoubleHeadsModelOutput(
+        return NgptDoubleHeadsModelOutput(
             loss=lm_loss,
             mc_loss=mc_loss,
             logits=lm_logits,
@@ -1576,9 +1638,9 @@ class GPT2DoubleHeadsModel(GPT2PreTrainedModel, GenerationMixin):
 
 @add_start_docstrings(
     """
-    The GPT2 Model transformer with a sequence classification head on top (linear layer).
+    The NGPT Model transformer with a sequence classification head on top (linear layer).
 
-    [`GPT2ForSequenceClassification`] uses the last token in order to do the classification, as other causal models
+    [`NgptForSequenceClassification`] uses the last token in order to do the classification, as other causal models
     (e.g. GPT-1) do.
 
     Since it does classification on the last token, it requires to know the position of the last token. If a
@@ -1587,13 +1649,13 @@ class GPT2DoubleHeadsModel(GPT2PreTrainedModel, GenerationMixin):
     padding tokens when `inputs_embeds` are passed instead of `input_ids`, it does the same (take the last value in
     each row of the batch).
     """,
-    GPT2_START_DOCSTRING,
+    NGPT_START_DOCSTRING,
 )
-class GPT2ForSequenceClassification(GPT2PreTrainedModel):
+class NgptForSequenceClassification(NgptPreTrainedModel):
     def __init__(self, config):
         super().__init__(config)
         self.num_labels = config.num_labels
-        self.transformer = GPT2Model(config)
+        self.transformer = NgptModel(config)
         self.score = nn.Linear(config.n_embd, self.num_labels, bias=False)
 
         # Model parallel
@@ -1603,7 +1665,7 @@ class GPT2ForSequenceClassification(GPT2PreTrainedModel):
         # Initialize weights and apply final processing
         self.post_init()
 
-    @add_start_docstrings_to_model_forward(GPT2_INPUTS_DOCSTRING)
+    @add_start_docstrings_to_model_forward(NGPT_INPUTS_DOCSTRING)
     @add_code_sample_docstrings(
         checkpoint="microsoft/DialogRPT-updown",
         output_type=SequenceClassifierOutputWithPast,
@@ -1710,17 +1772,17 @@ class GPT2ForSequenceClassification(GPT2PreTrainedModel):
 
 @add_start_docstrings(
     """
-    GPT2 Model with a token classification head on top (a linear layer on top of the hidden-states output) e.g. for
+    NGPT Model with a token classification head on top (a linear layer on top of the hidden-states output) e.g. for
     Named-Entity-Recognition (NER) tasks.
     """,
-    GPT2_START_DOCSTRING,
+    NGPT_START_DOCSTRING,
 )
-class GPT2ForTokenClassification(GPT2PreTrainedModel):
+class NgptForTokenClassification(NgptPreTrainedModel):
     def __init__(self, config):
         super().__init__(config)
         self.num_labels = config.num_labels
 
-        self.transformer = GPT2Model(config)
+        self.transformer = NgptModel(config)
         if hasattr(config, "classifier_dropout") and config.classifier_dropout is not None:
             classifier_dropout = config.classifier_dropout
         elif hasattr(config, "hidden_dropout") and config.hidden_dropout is not None:
@@ -1737,10 +1799,10 @@ class GPT2ForTokenClassification(GPT2PreTrainedModel):
         # Initialize weights and apply final processing
         self.post_init()
 
-    @add_start_docstrings_to_model_forward(GPT2_INPUTS_DOCSTRING)
+    @add_start_docstrings_to_model_forward(NGPT_INPUTS_DOCSTRING)
     # fmt: off
     @add_code_sample_docstrings(
-        checkpoint="brad1141/gpt2-finetuned-comp2",
+        checkpoint="brad1141/ngpt-finetuned-comp2",
         output_type=TokenClassifierOutput,
         config_class=_CONFIG_FOR_DOC,
         expected_loss=0.25,
@@ -1824,13 +1886,13 @@ class GPT2ForTokenClassification(GPT2PreTrainedModel):
     The GPT-2 Model transformer with a span classification head on top for extractive question-answering tasks like
     SQuAD (a linear layer on top of the hidden-states output to compute `span start logits` and `span end logits`).
     """,
-    GPT2_START_DOCSTRING,
+    NGPT_START_DOCSTRING,
 )
-class GPT2ForQuestionAnswering(GPT2PreTrainedModel):
+class NgptForQuestionAnswering(NgptPreTrainedModel):
     def __init__(self, config):
         super().__init__(config)
         self.num_labels = config.num_labels
-        self.transformer = GPT2Model(config)
+        self.transformer = NgptModel(config)
         self.qa_outputs = nn.Linear(config.hidden_size, 2)
 
         # Model parallel
@@ -1840,7 +1902,7 @@ class GPT2ForQuestionAnswering(GPT2PreTrainedModel):
         # Initialize weights and apply final processing
         self.post_init()
 
-    @add_start_docstrings_to_model_forward(GPT2_INPUTS_DOCSTRING.format("batch_size, sequence_length"))
+    @add_start_docstrings_to_model_forward(NGPT_INPUTS_DOCSTRING.format("batch_size, sequence_length"))
     @add_code_sample_docstrings(
         checkpoint=_CHECKPOINT_FOR_DOC,
         output_type=QuestionAnsweringModelOutput,
