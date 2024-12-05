@@ -18,7 +18,7 @@
 # to defer the actual importing for when the objects are requested. This way `import transformers` provides the names
 # in the namespace without actually importing anything (and especially none of the backends).
 
-__version__ = "4.47.0.dev0"
+__version__ = "4.48.0.dev0"
 
 from typing import TYPE_CHECKING
 
@@ -122,6 +122,7 @@ _import_structure = {
     "feature_extraction_utils": ["BatchFeature", "FeatureExtractionMixin"],
     "file_utils": [],
     "generation": [
+        "CompileConfig",
         "GenerationConfig",
         "TextIteratorStreamer",
         "TextStreamer",
@@ -496,6 +497,7 @@ _import_structure = {
     "models.idefics": ["IdeficsConfig"],
     "models.idefics2": ["Idefics2Config"],
     "models.idefics3": ["Idefics3Config"],
+    "models.ijepa": ["IJepaConfig"],
     "models.imagegpt": ["ImageGPTConfig"],
     "models.informer": ["InformerConfig"],
     "models.instructblip": [
@@ -1272,6 +1274,7 @@ else:
     _import_structure["image_processing_utils_fast"] = ["BaseImageProcessorFast"]
     _import_structure["models.deformable_detr"].append("DeformableDetrImageProcessorFast")
     _import_structure["models.detr"].append("DetrImageProcessorFast")
+    _import_structure["models.pixtral"].append("PixtralImageProcessorFast")
     _import_structure["models.rt_detr"].append("RTDetrImageProcessorFast")
     _import_structure["models.vit"].append("ViTImageProcessorFast")
 
@@ -2506,6 +2509,13 @@ else:
             "Idefics3Model",
             "Idefics3PreTrainedModel",
             "Idefics3Processor",
+        ]
+    )
+    _import_structure["models.ijepa"].extend(
+        [
+            "IJepaForImageClassification",
+            "IJepaModel",
+            "IJepaPreTrainedModel",
         ]
     )
     _import_structure["models.imagegpt"].extend(
@@ -5061,7 +5071,7 @@ if TYPE_CHECKING:
     from .feature_extraction_utils import BatchFeature, FeatureExtractionMixin
 
     # Generation
-    from .generation import GenerationConfig, TextIteratorStreamer, TextStreamer, WatermarkingConfig
+    from .generation import CompileConfig, GenerationConfig, TextIteratorStreamer, TextStreamer, WatermarkingConfig
     from .hf_argparser import HfArgumentParser
 
     # Integrations
@@ -5459,6 +5469,7 @@ if TYPE_CHECKING:
     )
     from .models.idefics2 import Idefics2Config
     from .models.idefics3 import Idefics3Config
+    from .models.ijepa import IJepaConfig
     from .models.imagegpt import ImageGPTConfig
     from .models.informer import InformerConfig
     from .models.instructblip import (
@@ -6282,6 +6293,7 @@ if TYPE_CHECKING:
         from .image_processing_utils_fast import BaseImageProcessorFast
         from .models.deformable_detr import DeformableDetrImageProcessorFast
         from .models.detr import DetrImageProcessorFast
+        from .models.pixtral import PixtralImageProcessorFast
         from .models.rt_detr import RTDetrImageProcessorFast
         from .models.vit import ViTImageProcessorFast
 
@@ -7300,6 +7312,11 @@ if TYPE_CHECKING:
             Idefics3Model,
             Idefics3PreTrainedModel,
             Idefics3Processor,
+        )
+        from .models.ijepa import (
+            IJepaForImageClassification,
+            IJepaModel,
+            IJepaPreTrainedModel,
         )
         from .models.imagegpt import (
             ImageGPTForCausalImageModeling,
