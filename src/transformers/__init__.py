@@ -170,6 +170,11 @@ _import_structure = {
         "AltCLIPTextConfig",
         "AltCLIPVisionConfig",
     ],
+    "models.aria": [
+        "AriaConfig",
+        "AriaProcessor",
+        "AriaTextConfig",
+    ],
     "models.audio_spectrogram_transformer": [
         "ASTConfig",
         "ASTFeatureExtractor",
@@ -1188,6 +1193,7 @@ else:
     _import_structure["image_processing_base"] = ["ImageProcessingMixin"]
     _import_structure["image_processing_utils"] = ["BaseImageProcessor"]
     _import_structure["image_utils"] = ["ImageFeatureExtractionMixin"]
+    _import_structure["models.aria"].extend(["AriaImageProcessor"])
     _import_structure["models.beit"].extend(["BeitFeatureExtractor", "BeitImageProcessor"])
     _import_structure["models.bit"].extend(["BitImageProcessor"])
     _import_structure["models.blip"].extend(["BlipImageProcessor"])
@@ -1416,6 +1422,15 @@ else:
             "AltCLIPPreTrainedModel",
             "AltCLIPTextModel",
             "AltCLIPVisionModel",
+        ]
+    )
+    _import_structure["models.aria"].extend(
+        [
+            "AriaForConditionalGeneration",
+            "AriaPreTrainedModel",
+            "AriaTextForCausalLM",
+            "AriaTextModel",
+            "AriaTextPreTrainedModel",
         ]
     )
     _import_structure["models.audio_spectrogram_transformer"].extend(
@@ -2509,6 +2524,8 @@ else:
             "Idefics3Model",
             "Idefics3PreTrainedModel",
             "Idefics3Processor",
+            "Idefics3VisionConfig",
+            "Idefics3VisionTransformer",
         ]
     )
     _import_structure["models.ijepa"].extend(
@@ -5114,6 +5131,11 @@ if TYPE_CHECKING:
         AltCLIPTextConfig,
         AltCLIPVisionConfig,
     )
+    from .models.aria import (
+        AriaConfig,
+        AriaProcessor,
+        AriaTextConfig,
+    )
     from .models.audio_spectrogram_transformer import (
         ASTConfig,
         ASTFeatureExtractor,
@@ -6189,6 +6211,7 @@ if TYPE_CHECKING:
         from .image_processing_base import ImageProcessingMixin
         from .image_processing_utils import BaseImageProcessor
         from .image_utils import ImageFeatureExtractionMixin
+        from .models.aria import AriaImageProcessor
         from .models.beit import BeitFeatureExtractor, BeitImageProcessor
         from .models.bit import BitImageProcessor
         from .models.blip import BlipImageProcessor
@@ -6417,6 +6440,13 @@ if TYPE_CHECKING:
             AltCLIPPreTrainedModel,
             AltCLIPTextModel,
             AltCLIPVisionModel,
+        )
+        from .models.aria import (
+            AriaForConditionalGeneration,
+            AriaPreTrainedModel,
+            AriaTextForCausalLM,
+            AriaTextModel,
+            AriaTextPreTrainedModel,
         )
         from .models.audio_spectrogram_transformer import (
             ASTForAudioClassification,
@@ -7312,6 +7342,8 @@ if TYPE_CHECKING:
             Idefics3Model,
             Idefics3PreTrainedModel,
             Idefics3Processor,
+            Idefics3VisionConfig,
+            Idefics3VisionTransformer,
         )
         from .models.ijepa import (
             IJepaForImageClassification,
