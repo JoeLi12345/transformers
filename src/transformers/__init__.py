@@ -122,6 +122,7 @@ _import_structure = {
     "feature_extraction_utils": ["BatchFeature", "FeatureExtractionMixin"],
     "file_utils": [],
     "generation": [
+        "AsyncTextIteratorStreamer",
         "CompileConfig",
         "GenerationConfig",
         "TextIteratorStreamer",
@@ -193,6 +194,7 @@ _import_structure = {
         "AutoTokenizer",
     ],
     "models.autoformer": ["AutoformerConfig"],
+    "models.bamba": ["BambaConfig"],
     "models.bark": [
         "BarkCoarseConfig",
         "BarkConfig",
@@ -306,6 +308,10 @@ _import_structure = {
     ],
     "models.cohere": ["CohereConfig"],
     "models.cohere2": ["Cohere2Config"],
+    "models.colpali": [
+        "ColPaliConfig",
+        "ColPaliProcessor",
+    ],
     "models.conditional_detr": ["ConditionalDetrConfig"],
     "models.convbert": [
         "ConvBertConfig",
@@ -398,6 +404,7 @@ _import_structure = {
     "models.dialogpt": [],
     "models.dinat": ["DinatConfig"],
     "models.dinov2": ["Dinov2Config"],
+    "models.dinov2_with_registers": ["Dinov2WithRegistersConfig"],
     "models.distilbert": [
         "DistilBertConfig",
         "DistilBertTokenizer",
@@ -613,6 +620,7 @@ _import_structure = {
     "models.mobilenet_v2": ["MobileNetV2Config"],
     "models.mobilevit": ["MobileViTConfig"],
     "models.mobilevitv2": ["MobileViTV2Config"],
+    "models.modernbert": ["ModernBertConfig"],
     "models.moshi": [
         "MoshiConfig",
         "MoshiDepthConfig",
@@ -1003,9 +1011,11 @@ _import_structure = {
         "EetqConfig",
         "FbgemmFp8Config",
         "GPTQConfig",
+        "HiggsConfig",
         "HqqConfig",
         "QuantoConfig",
         "TorchAoConfig",
+        "VptqConfig",
     ],
 }
 
@@ -1480,6 +1490,7 @@ else:
             "MODEL_FOR_OBJECT_DETECTION_MAPPING",
             "MODEL_FOR_PRETRAINING_MAPPING",
             "MODEL_FOR_QUESTION_ANSWERING_MAPPING",
+            "MODEL_FOR_RETRIEVAL_MAPPING",
             "MODEL_FOR_SEMANTIC_SEGMENTATION_MAPPING",
             "MODEL_FOR_SEQ_TO_SEQ_CAUSAL_LM_MAPPING",
             "MODEL_FOR_SEQUENCE_CLASSIFICATION_MAPPING",
@@ -1545,6 +1556,13 @@ else:
             "AutoformerForPrediction",
             "AutoformerModel",
             "AutoformerPreTrainedModel",
+        ]
+    )
+    _import_structure["models.bamba"].extend(
+        [
+            "BambaForCausalLM",
+            "BambaModel",
+            "BambaPreTrainedModel",
         ]
     )
     _import_structure["models.bark"].extend(
@@ -1801,6 +1819,12 @@ else:
     )
     _import_structure["models.cohere"].extend(["CohereForCausalLM", "CohereModel", "CoherePreTrainedModel"])
     _import_structure["models.cohere2"].extend(["Cohere2ForCausalLM", "Cohere2Model", "Cohere2PreTrainedModel"])
+    _import_structure["models.colpali"].extend(
+        [
+            "ColPaliForRetrieval",
+            "ColPaliPreTrainedModel",
+        ]
+    )
     _import_structure["models.conditional_detr"].extend(
         [
             "ConditionalDetrForObjectDetection",
@@ -2147,6 +2171,14 @@ else:
             "Dinov2ForImageClassification",
             "Dinov2Model",
             "Dinov2PreTrainedModel",
+        ]
+    )
+    _import_structure["models.dinov2_with_registers"].extend(
+        [
+            "Dinov2WithRegistersBackbone",
+            "Dinov2WithRegistersForImageClassification",
+            "Dinov2WithRegistersModel",
+            "Dinov2WithRegistersPreTrainedModel",
         ]
     )
     _import_structure["models.distilbert"].extend(
@@ -2896,6 +2928,15 @@ else:
             "MobileViTV2ForSemanticSegmentation",
             "MobileViTV2Model",
             "MobileViTV2PreTrainedModel",
+        ]
+    )
+    _import_structure["models.modernbert"].extend(
+        [
+            "ModernBertForMaskedLM",
+            "ModernBertForSequenceClassification",
+            "ModernBertForTokenClassification",
+            "ModernBertModel",
+            "ModernBertPreTrainedModel",
         ]
     )
     _import_structure["models.moshi"].extend(
@@ -5106,7 +5147,14 @@ if TYPE_CHECKING:
     from .feature_extraction_utils import BatchFeature, FeatureExtractionMixin
 
     # Generation
-    from .generation import CompileConfig, GenerationConfig, TextIteratorStreamer, TextStreamer, WatermarkingConfig
+    from .generation import (
+        AsyncTextIteratorStreamer,
+        CompileConfig,
+        GenerationConfig,
+        TextIteratorStreamer,
+        TextStreamer,
+        WatermarkingConfig,
+    )
     from .hf_argparser import HfArgumentParser
 
     # Integrations
@@ -5174,6 +5222,7 @@ if TYPE_CHECKING:
     from .models.autoformer import (
         AutoformerConfig,
     )
+    from .models.bamba import BambaConfig
     from .models.bark import (
         BarkCoarseConfig,
         BarkConfig,
@@ -5288,6 +5337,10 @@ if TYPE_CHECKING:
     )
     from .models.cohere import CohereConfig
     from .models.cohere2 import Cohere2Config
+    from .models.colpali import (
+        ColPaliConfig,
+        ColPaliProcessor,
+    )
     from .models.conditional_detr import (
         ConditionalDetrConfig,
     )
@@ -5399,6 +5452,7 @@ if TYPE_CHECKING:
     from .models.detr import DetrConfig
     from .models.dinat import DinatConfig
     from .models.dinov2 import Dinov2Config
+    from .models.dinov2_with_registers import Dinov2WithRegistersConfig
     from .models.distilbert import (
         DistilBertConfig,
         DistilBertTokenizer,
@@ -5634,6 +5688,7 @@ if TYPE_CHECKING:
     from .models.mobilevitv2 import (
         MobileViTV2Config,
     )
+    from .models.modernbert import ModernBertConfig
     from .models.moshi import (
         MoshiConfig,
         MoshiDepthConfig,
@@ -6072,9 +6127,11 @@ if TYPE_CHECKING:
         EetqConfig,
         FbgemmFp8Config,
         GPTQConfig,
+        HiggsConfig,
         HqqConfig,
         QuantoConfig,
         TorchAoConfig,
+        VptqConfig,
     )
 
     try:
@@ -6506,6 +6563,7 @@ if TYPE_CHECKING:
             MODEL_FOR_OBJECT_DETECTION_MAPPING,
             MODEL_FOR_PRETRAINING_MAPPING,
             MODEL_FOR_QUESTION_ANSWERING_MAPPING,
+            MODEL_FOR_RETRIEVAL_MAPPING,
             MODEL_FOR_SEMANTIC_SEGMENTATION_MAPPING,
             MODEL_FOR_SEQ_TO_SEQ_CAUSAL_LM_MAPPING,
             MODEL_FOR_SEQUENCE_CLASSIFICATION_MAPPING,
@@ -6570,6 +6628,7 @@ if TYPE_CHECKING:
             AutoformerModel,
             AutoformerPreTrainedModel,
         )
+        from .models.bamba import BambaForCausalLM, BambaModel, BambaPreTrainedModel
         from .models.bark import (
             BarkCausalModel,
             BarkCoarseModel,
@@ -6781,6 +6840,10 @@ if TYPE_CHECKING:
             Cohere2ForCausalLM,
             Cohere2Model,
             Cohere2PreTrainedModel,
+        )
+        from .models.colpali import (
+            ColPaliForRetrieval,
+            ColPaliPreTrainedModel,
         )
         from .models.conditional_detr import (
             ConditionalDetrForObjectDetection,
@@ -7058,6 +7121,12 @@ if TYPE_CHECKING:
             Dinov2ForImageClassification,
             Dinov2Model,
             Dinov2PreTrainedModel,
+        )
+        from .models.dinov2_with_registers import (
+            Dinov2WithRegistersBackbone,
+            Dinov2WithRegistersForImageClassification,
+            Dinov2WithRegistersModel,
+            Dinov2WithRegistersPreTrainedModel,
         )
         from .models.distilbert import (
             DistilBertForMaskedLM,
@@ -7648,6 +7717,13 @@ if TYPE_CHECKING:
             MobileViTV2ForSemanticSegmentation,
             MobileViTV2Model,
             MobileViTV2PreTrainedModel,
+        )
+        from .models.modernbert import (
+            ModernBertForMaskedLM,
+            ModernBertForSequenceClassification,
+            ModernBertForTokenClassification,
+            ModernBertModel,
+            ModernBertPreTrainedModel,
         )
         from .models.moshi import (
             MoshiForCausalLM,
