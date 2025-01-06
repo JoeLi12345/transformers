@@ -4,16 +4,27 @@ from transformers import GPT2Tokenizer, AutoModelForCausalLM
 import torch
 from datasets import load_dataset
 import torch.nn.functional as F
+import time
 from torch.utils.data import Dataset, DataLoader
+import math
+import inspect
 
 class TrainDataset(Dataset):
-    def __init__(self, T=32):
-        self.dataset = load_dataset("karpathy/tiny_shakespeare")['train']
+    def __init__(self, T):
+        self.dataset = load_dataset("stas/openwebtext-10k")['train']
         self.tokenizer = GPT2Tokenizer.from_pretrained("openai-community/gpt2")
-        self.message = self.dataset[0]["text"]
-        #print(self.message)
-        self.tokens = self.tokenizer(self.message)["input_ids"]
-        self.tokens = torch.tensor(self.tokens,dtype=torch.long)
+        self.tokens = []
+        print(len(self.dataset))
+        for i in range(len(self.dataset)):
+            self.message = self.dataset[i]["text"]
+            token_append = self.tokenizer(self.message)["input_ids"]
+            remainder = len(token_append) % T
+            if remainder != 0:
+                print(remainder)
+                token_append = token_append[:-remainder]
+            self.tokens.extend(token_append)
+
+        self.tokens = torch.tensor(self.tokens, dtype=torch.long)
         self.T = T
         print(f"loaded {self.tokens.size(0)} tokens")
 
@@ -24,6 +35,41 @@ class TrainDataset(Dataset):
     def __getitem__(self, idx):
         return self.tokens[idx*self.T:(idx+1)*self.T], self.tokens[idx*self.T:(idx+1)*self.T]
 
+max_steps = 50
+
+def get_lr(it, max_lr=6e-4, min_lr=6e-5, warmup_steps=10):
+    if it < warmup_steps:
+        return max_lr * (it+1) / warmup_steps
+
+    if it > max_steps:
+        return min_lr
+    decay_ratio = (it - warmup_steps) / (max_steps - warmup_steps)
+    assert 0 <= decay_ratio <= 1
+    coeff = 0.5 * (1.0 + math.cos(math.pi * decay_ratio)) # coeff starts at 1 and goes to 0
+    return min_lr + coeff * (max_lr - min_lr)
+
+def configure_optimizers(model, weight_decay, learning_rate, device_type):
+    param_dict = {pn: p for pn, p in model.named_parameters()}
+    param_dict = {pn: p for pn, p in param_dict.items() if p.requires_grad}
+
+    decay_params = [p for n, p in param_dict.items() if p.dim() >= 2]
+    nodecay_params = [p for n, p in param_dict.items() if p.dim() < 2]
+    optim_groups = [
+        {'params': decay_params, 'weight_decay': weight_decay},
+        {'params': nodecay_params, 'weight_decay': 0.0}
+    ]
+    num_decay_params = sum(p.numel() for p in decay_params)
+    num_nodecay_params = sum(p.numel() for p in nodecay_params)
+
+    print(f"num decayed parameter tensors: {len(decay_params)}, with {num_decay_params:,} parameters")
+    print(f"num non-decayed parameter tensors: {len(nodecay_params)}, with {num_nodecay_params:,} parameters")
+    # Create AdamW optimizer and use the fused version if it is available
+    fused_available = 'fused' in inspect.signature(torch.optim.AdamW).parameters
+    use_fused = fused_available and device_type == "cuda"
+
+    print(f"using fused AdamW: {use_fused}")
+    optimizer = torch.optim.AdamW(optim_groups, lr=learning_rate, betas=(0.9, 0.95), eps=1e-8, fused=use_fused)
+    return optimizer
 
 #message = "Hello, I'm a language model,"
 
@@ -36,29 +82,57 @@ torch.manual_seed(1337)
 if (torch.cuda.is_available()):
     torch.cuda.manual_seed(1337)
 
-train_data = TrainDataset()
-train_dataloader = DataLoader(train_data, batch_size=4)
+total_batch_size = 524288
+B, T = 8, 1024
+assert total_batch_size % (B * T) == 0
+grad_accum_steps = total_batch_size // (B*T)
+print(f"total desired batch size: {total_batch_size}")
+print(f"gradient accumulation steps: {grad_accum_steps}")
 
-gpt2_model = GPT2LMHeadModel(GPT2Config())
+
+torch.set_float32_matmul_precision('high')
+train_data = TrainDataset(T=T)
+train_dataloader = DataLoader(train_data, batch_size=B)
+
+gpt2_model = GPT2LMHeadModel(GPT2Config(vocab_size=50304))
 gpt2_model.to(device)
-#gpt2_model = AutoModelForCausalLM.from_pretrained("gpt2")
 
-#print(gpt2_model(input_ids=buf,labels=buf)["loss"])
-optimizer = torch.optim.AdamW(gpt2_model.parameters(), lr=3e-4)
+gpt2_model = torch.compile(gpt2_model)
 
-cnt = 0
-for i_batch, sample_batch in enumerate(train_dataloader):
+optimizer = configure_optimizers(gpt2_model, weight_decay=0.1, learning_rate=6e-4, device_type=device)
+
+train_iterator = iter(train_dataloader)
+
+for step in range(max_steps):
+    t0 = time.time()
     optimizer.zero_grad()
-    sample_batch[0], sample_batch[1] = sample_batch[0].to(device), sample_batch[1].to(device)
-    ret = gpt2_model(input_ids=sample_batch[0],labels=sample_batch[1])
-    logits,loss = ret["logits"], ret["loss"]
-    loss.backward()
-    optimizer.step()
-    print(f"step {i_batch}, loss: {loss.item()}")
+    loss_accum = 0.0
+    for micro_step in range(grad_accum_steps):
+        sample_batch = next(train_iterator)
+        sample_batch[0] = sample_batch[0].to(device)
+        sample_batch[1] = sample_batch[1].to(device)
 
-    if (cnt > 50):
-        break
-    cnt += 1
+        with torch.autocast(device_type=device, dtype=torch.bfloat16):
+            ret = gpt2_model(input_ids=sample_batch[0],labels=sample_batch[1])
+            logits,loss = ret["logits"], ret["loss"]
+
+        loss = loss / grad_accum_steps
+        loss_accum += loss.detach()
+        loss.backward()
+
+    norm = torch.nn.utils.clip_grad_norm_(gpt2_model.parameters(), 1.0)
+    
+    lr = get_lr(step)
+
+    for param_group in optimizer.param_groups:
+        param_group['lr'] = lr
+
+    optimizer.step()
+    torch.cuda.synchronize()
+    t1 = time.time()
+    dt = (t1-t0)*1000
+    tokens_per_sec = B*T*grad_accum_steps/(t1-t0)
+    print(f"step {step}, loss: {loss_accum.item()}, time: {dt:.2f}ms, norm: {norm:.4f}, lr: {lr}, tok/sec: {tokens_per_sec:.4f}")
 
 import sys
 sys.exit(0)
