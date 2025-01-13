@@ -8,6 +8,54 @@ import time
 from torch.utils.data import Dataset, DataLoader
 import math
 import inspect
+import os
+import numpy as np
+
+def load_tokens(filename):
+    npt = np.load(filename)
+    npt = npt.astype(np.int32) # added after video
+    ptt = torch.tensor(npt, dtype=torch.long)
+    return ptt
+
+class DataLoaderLite:
+    def __init__(self, B, T, process_rank, num_processes, split):
+        self.B = B
+        self.T = T
+        self.process_rank = process_rank
+        self.num_processes = num_processes
+        assert split in {'train', 'val'}
+
+# get the shard filenames
+        data_root = "openwebtextB"
+        shards = os.listdir(data_root)
+        shards = [s for s in shards if split in s]
+        shards = sorted(shards)
+        shards = [os.path.join(data_root, s) for s in shards]
+        self.shards = shards
+        assert len(shards) > 0, f"no shards found for split {split}"
+        #if master_process:
+        print(f"found {len(shards)} shards for split {split}")
+        self.reset()
+
+    def reset(self):
+        # state, init at shard zero
+        self.current_shard = 0
+        self.tokens = load_tokens(self.shards[self.current_shard])
+        self.current_position = self.B * self.T * self.process_rank
+
+    def next_batch(self):
+        B, T = self.B, self.T
+        buf = self.tokens[self.current_position : self.current_position+B*T+1]
+        x = (buf[:-1]).view(B, T) # inputs
+        y = (buf[1:]).view(B, T) # targets
+# advance the position in the tensor
+        self.current_position += B * T * self.num_processes
+# if loading the next batch would be out of bounds, advance to next shard
+        if self.current_position + (B * T * self.num_processes + 1) > len(self.tokens):
+            self.current_shard = (self.current_shard + 1) % len(self.shards)
+            self.tokens = load_tokens(self.shards[self.current_shard])
+            self.current_position = B * T * self.process_rank
+        return x, x
 
 class TrainDataset(Dataset):
     def __init__(self, T):
@@ -20,7 +68,6 @@ class TrainDataset(Dataset):
             token_append = self.tokenizer(self.message)["input_ids"]
             remainder = len(token_append) % T
             if remainder != 0:
-                print(remainder)
                 token_append = token_append[:-remainder]
             self.tokens.extend(token_append)
 
@@ -35,7 +82,7 @@ class TrainDataset(Dataset):
     def __getitem__(self, idx):
         return self.tokens[idx*self.T:(idx+1)*self.T], self.tokens[idx*self.T:(idx+1)*self.T]
 
-max_steps = 50
+max_steps = 2000
 
 def get_lr(it, max_lr=6e-4, min_lr=6e-5, warmup_steps=10):
     if it < warmup_steps:
@@ -82,8 +129,8 @@ torch.manual_seed(1337)
 if (torch.cuda.is_available()):
     torch.cuda.manual_seed(1337)
 
-total_batch_size = 524288
-B, T = 8, 1024
+total_batch_size = 65536
+B, T = 64, 1024
 assert total_batch_size % (B * T) == 0
 grad_accum_steps = total_batch_size // (B*T)
 print(f"total desired batch size: {total_batch_size}")
@@ -91,8 +138,10 @@ print(f"gradient accumulation steps: {grad_accum_steps}")
 
 
 torch.set_float32_matmul_precision('high')
-train_data = TrainDataset(T=T)
-train_dataloader = DataLoader(train_data, batch_size=B)
+#train_data = TrainDataset(T=T)
+#train_dataloader = DataLoader(train_data, batch_size=B)
+
+train_dataloader = DataLoaderLite(B=B, T=T, process_rank=0, num_processes=1, split="train")
 
 gpt2_model = GPT2LMHeadModel(GPT2Config(vocab_size=50304))
 gpt2_model.to(device)
@@ -101,19 +150,22 @@ gpt2_model = torch.compile(gpt2_model)
 
 optimizer = configure_optimizers(gpt2_model, weight_decay=0.1, learning_rate=6e-4, device_type=device)
 
-train_iterator = iter(train_dataloader)
+#train_iterator = iter(train_dataloader)
 
 for step in range(max_steps):
     t0 = time.time()
     optimizer.zero_grad()
     loss_accum = 0.0
     for micro_step in range(grad_accum_steps):
-        sample_batch = next(train_iterator)
+        '''sample_batch = next(train_iterator)
         sample_batch[0] = sample_batch[0].to(device)
-        sample_batch[1] = sample_batch[1].to(device)
+        sample_batch[1] = sample_batch[1].to(device)'''
+        x, y = train_dataloader.next_batch()
+        x, y = x.to(device), y.to(device)
 
         with torch.autocast(device_type=device, dtype=torch.bfloat16):
-            ret = gpt2_model(input_ids=sample_batch[0],labels=sample_batch[1])
+            #ret = gpt2_model(input_ids=sample_batch[0],labels=sample_batch[1])
+            ret = gpt2_model(input_ids=x, labels=y)
             logits,loss = ret["logits"], ret["loss"]
 
         loss = loss / grad_accum_steps
