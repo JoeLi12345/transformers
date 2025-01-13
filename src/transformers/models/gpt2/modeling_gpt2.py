@@ -48,6 +48,7 @@ from ...utils import (
 )
 from ...utils.model_parallel_utils import assert_device_map, get_device_map
 from .configuration_gpt2 import GPT2Config
+from torchtune.modules import RotaryPositionalEmbeddings
 
 
 logger = logging.get_logger(__name__)
@@ -178,6 +179,9 @@ class GPT2Attention(nn.Module):
                 f" {self.num_heads})."
             )
 
+        # INITIALIZE ROTARY POSITIONAL EMBEDDINGS HERE
+        self.rpe = RotaryPositionalEmbeddings(dim=head_dim, max_seq_len=config.max_position_embeddings)
+    
         self.scale_attn_weights = config.scale_attn_weights
         self.is_cross_attention = is_cross_attention
 
@@ -295,9 +299,14 @@ class GPT2Attention(nn.Module):
         shape_q = (*query_states.shape[:-1], -1, self.head_dim)
         shape_kv = (*key_states.shape[:-1], -1, self.head_dim)
 
+
         query_states = query_states.view(shape_q).transpose(1, 2)
         key_states = key_states.view(shape_kv).transpose(1, 2)
         value_states = value_states.view(shape_kv).transpose(1, 2)
+
+# APPLY ROTARY POSITION EMBEDDING HERE
+        query_states = self.rpe(query_states)
+        key_states = self.rpe(query_states)
 
         if layer_past is not None:
             past_key, past_value = layer_past
@@ -314,6 +323,7 @@ class GPT2Attention(nn.Module):
 
         using_eager = self.config._attn_implementation == "eager"
         attention_interface: Callable = eager_attention_forward
+        print(self.config._attn_implementation, query_states.shape)
         if self.config._attn_implementation != "eager":
             if self.config._attn_implementation == "sdpa" and (output_attentions or head_mask is not None):
                 using_eager = True
@@ -359,14 +369,19 @@ class GPT2MLP(nn.Module):
     def __init__(self, intermediate_size, config):
         super().__init__()
         embed_dim = config.hidden_size
-        self.c_fc = Conv1D(intermediate_size, embed_dim)
+        #self.c_fc = Conv1D(intermediate_size, embed_dim)
+        self.c_fc = Conv1D(2*intermediate_size, embed_dim)
         self.c_proj = Conv1D(embed_dim, intermediate_size)
         self.act = ACT2FN[config.activation_function]
         self.dropout = nn.Dropout(config.resid_pdrop)
 
     def forward(self, hidden_states: Optional[Tuple[torch.FloatTensor]]) -> torch.FloatTensor:
         hidden_states = self.c_fc(hidden_states)
-        hidden_states = self.act(hidden_states)
+#IMPLEMENT SWIGLU
+        u, v = torch.chunk(hidden_states, 2, dim=-1)
+        #hidden_states = self.c_fc(hidden_states)
+        hidden_states = u * self.act(v)
+        #hidden_states = self.act(hidden_states)
         hidden_states = self.c_proj(hidden_states)
         hidden_states = self.dropout(hidden_states)
         return hidden_states
