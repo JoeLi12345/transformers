@@ -11,6 +11,38 @@ import inspect
 import os
 import numpy as np
 
+'''
+torchrun --standalone --nproc-per-node=8 run_model.py
+'''
+from torch.distributed import init_process_group, destroy_process_group
+from torch.nn.parallel import DistributedDataParallel as DDP
+import torch.distributed as dist
+
+ddp = int(os.environ.get('RANK', -1)) != -1 # is this a ddp run?
+if ddp:
+    # use of DDP atm demands CUDA, we set the device appropriately according to rank
+    assert torch.cuda.is_available(), "for now i think we need CUDA for DDP"
+    init_process_group(backend='nccl')
+    ddp_rank = int(os.environ['RANK'])              # different ids for each gpu
+    ddp_local_rank = int(os.environ['LOCAL_RANK']) # depends on multinode training
+    ddp_world_size = int(os.environ['WORLD_SIZE'])  # total number of processes running
+    device = f'cuda:{ddp_local_rank}'
+    torch.cuda.set_device(device)
+    master_process = ddp_rank == 0 # this process will do logging, checkpointing etc.
+else:
+    # vanilla, non-DDP run
+    ddp_rank = 0
+    ddp_local_rank = 0
+    ddp_world_size = 1
+    master_process = True
+    # attempt to autodetect device
+    device = "cpu"
+    if torch.cuda.is_available():
+        device = "cuda"
+    elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+        device = "mps"
+    print(f"using device: {device}")
+
 def load_tokens(filename):
     npt = np.load(filename)
     npt = npt.astype(np.int32) # added after video
@@ -33,8 +65,8 @@ class DataLoaderLite:
         shards = [os.path.join(data_root, s) for s in shards]
         self.shards = shards
         assert len(shards) > 0, f"no shards found for split {split}"
-        #if master_process:
-        print(f"found {len(shards)} shards for split {split}")
+        if master_process:
+            print(f"found {len(shards)} shards for split {split}")
         self.reset()
 
     def reset(self):
@@ -57,7 +89,7 @@ class DataLoaderLite:
             self.current_position = B * T * self.process_rank
         return x, x
 
-class TrainDataset(Dataset):
+'''class TrainDataset(Dataset):
     def __init__(self, T):
         self.dataset = load_dataset("stas/openwebtext-10k")['train']
         self.tokenizer = GPT2Tokenizer.from_pretrained("openai-community/gpt2")
@@ -80,20 +112,7 @@ class TrainDataset(Dataset):
 
 
     def __getitem__(self, idx):
-        return self.tokens[idx*self.T:(idx+1)*self.T], self.tokens[idx*self.T:(idx+1)*self.T]
-
-max_steps = 2000
-
-def get_lr(it, max_lr=6e-4, min_lr=6e-5, warmup_steps=10):
-    if it < warmup_steps:
-        return max_lr * (it+1) / warmup_steps
-
-    if it > max_steps:
-        return min_lr
-    decay_ratio = (it - warmup_steps) / (max_steps - warmup_steps)
-    assert 0 <= decay_ratio <= 1
-    coeff = 0.5 * (1.0 + math.cos(math.pi * decay_ratio)) # coeff starts at 1 and goes to 0
-    return min_lr + coeff * (max_lr - min_lr)
+        return self.tokens[idx*self.T:(idx+1)*self.T], self.tokens[idx*self.T:(idx+1)*self.T]'''
 
 def configure_optimizers(model, weight_decay, learning_rate, device_type):
     param_dict = {pn: p for pn, p in model.named_parameters()}
@@ -108,70 +127,81 @@ def configure_optimizers(model, weight_decay, learning_rate, device_type):
     num_decay_params = sum(p.numel() for p in decay_params)
     num_nodecay_params = sum(p.numel() for p in nodecay_params)
 
-    print(f"num decayed parameter tensors: {len(decay_params)}, with {num_decay_params:,} parameters")
-    print(f"num non-decayed parameter tensors: {len(nodecay_params)}, with {num_nodecay_params:,} parameters")
+    if master_process:
+        print(f"num decayed parameter tensors: {len(decay_params)}, with {num_decay_params:,} parameters")
+        print(f"num non-decayed parameter tensors: {len(nodecay_params)}, with {num_nodecay_params:,} parameters")
     # Create AdamW optimizer and use the fused version if it is available
     fused_available = 'fused' in inspect.signature(torch.optim.AdamW).parameters
     use_fused = fused_available and device_type == "cuda"
 
-    print(f"using fused AdamW: {use_fused}")
+    if master_process:
+        print(f"using fused AdamW: {use_fused}")
     optimizer = torch.optim.AdamW(optim_groups, lr=learning_rate, betas=(0.9, 0.95), eps=1e-8, fused=use_fused)
     return optimizer
 
 #message = "Hello, I'm a language model,"
 
-device = "cpu"
-if torch.cuda.is_available():
-    device = "cuda"
-print(f"using device: {device}")
-
 torch.manual_seed(1337)
 if (torch.cuda.is_available()):
     torch.cuda.manual_seed(1337)
 
-total_batch_size = 65536
+total_batch_size = 524288
 B, T = 64, 1024
-assert total_batch_size % (B * T) == 0
-grad_accum_steps = total_batch_size // (B*T)
-print(f"total desired batch size: {total_batch_size}")
-print(f"gradient accumulation steps: {grad_accum_steps}")
+assert total_batch_size % (B * T * ddp_world_size) == 0, "make sure total batch size is divisible"
+grad_accum_steps = total_batch_size // (B * T * ddp_world_size)
 
+if master_process:
+    print(f"total desired batch size: {total_batch_size}")
+    print(f"gradient accumulation steps: {grad_accum_steps}")
 
 torch.set_float32_matmul_precision('high')
-#train_data = TrainDataset(T=T)
-#train_dataloader = DataLoader(train_data, batch_size=B)
 
-train_dataloader = DataLoaderLite(B=B, T=T, process_rank=0, num_processes=1, split="train")
+train_dataloader = DataLoaderLite(B=B, T=T, process_rank=ddp_rank, num_processes=ddp_world_size, split="train")
+val_dataloader = DataLoaderLite(B=B, T=T, process_rank=ddp_rank, num_processes=ddp_world_size, split="val")
 
 gpt2_model = GPT2LMHeadModel(GPT2Config(vocab_size=50304))
 gpt2_model.to(device)
-
 gpt2_model = torch.compile(gpt2_model)
+if ddp:
+    gpt2_model = DDP(gpt2_model, device_ids=[ddp_local_rank])
+raw_model = gpt2_model.module if ddp else gpt2_model # always contains the "raw" unwrapped model
 
-optimizer = configure_optimizers(gpt2_model, weight_decay=0.1, learning_rate=6e-4, device_type=device)
 
-#train_iterator = iter(train_dataloader)
+max_steps = 19073
+
+def get_lr(it, max_lr=6e-4, min_lr=6e-5, warmup_steps=715):
+    if it < warmup_steps:
+        return max_lr * (it+1) / warmup_steps
+
+    if it > max_steps:
+        return min_lr
+    decay_ratio = (it - warmup_steps) / (max_steps - warmup_steps)
+    assert 0 <= decay_ratio <= 1
+    coeff = 0.5 * (1.0 + math.cos(math.pi * decay_ratio)) # coeff starts at 1 and goes to 0
+    return min_lr + coeff * (max_lr - min_lr)
+
+optimizer = configure_optimizers(raw_model, weight_decay=0.1, learning_rate=6e-4, device_type=device)
 
 for step in range(max_steps):
     t0 = time.time()
     optimizer.zero_grad()
     loss_accum = 0.0
     for micro_step in range(grad_accum_steps):
-        '''sample_batch = next(train_iterator)
-        sample_batch[0] = sample_batch[0].to(device)
-        sample_batch[1] = sample_batch[1].to(device)'''
         x, y = train_dataloader.next_batch()
         x, y = x.to(device), y.to(device)
 
         with torch.autocast(device_type=device, dtype=torch.bfloat16):
-            #ret = gpt2_model(input_ids=sample_batch[0],labels=sample_batch[1])
             ret = gpt2_model(input_ids=x, labels=y)
             logits,loss = ret["logits"], ret["loss"]
 
         loss = loss / grad_accum_steps
         loss_accum += loss.detach()
+        if ddp:
+            gpt2_model.require_backward_grad_sync = (micro_step == grad_accum_steps - 1)
         loss.backward()
 
+    if ddp:
+        dist.all_reduce(loss_accum, op=dist.ReduceOp.AVG)
     norm = torch.nn.utils.clip_grad_norm_(gpt2_model.parameters(), 1.0)
     
     lr = get_lr(step)
@@ -183,8 +213,12 @@ for step in range(max_steps):
     torch.cuda.synchronize()
     t1 = time.time()
     dt = (t1-t0)*1000
-    tokens_per_sec = B*T*grad_accum_steps/(t1-t0)
-    print(f"step {step}, loss: {loss_accum.item()}, time: {dt:.2f}ms, norm: {norm:.4f}, lr: {lr}, tok/sec: {tokens_per_sec:.4f}")
+    tokens_per_sec = ddp_world_size*B*T*grad_accum_steps/(t1-t0)
+    if master_process:
+        print(f"step {step}, loss: {loss_accum.item()}, time: {dt:.2f}ms, norm: {norm:.4f}, lr: {lr}, tok/sec: {tokens_per_sec:.4f}")
+
+if ddp:
+    destroy_process_group()
 
 import sys
 sys.exit(0)

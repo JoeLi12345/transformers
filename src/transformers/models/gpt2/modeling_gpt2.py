@@ -180,7 +180,7 @@ class GPT2Attention(nn.Module):
             )
 
         # INITIALIZE ROTARY POSITIONAL EMBEDDINGS HERE
-        self.rpe = RotaryPositionalEmbeddings(dim=head_dim, max_seq_len=config.max_position_embeddings)
+        self.rpe = RotaryPositionalEmbeddings(dim=self.head_dim, max_seq_len=config.max_position_embeddings)
     
         self.scale_attn_weights = config.scale_attn_weights
         self.is_cross_attention = is_cross_attention
@@ -323,7 +323,7 @@ class GPT2Attention(nn.Module):
 
         using_eager = self.config._attn_implementation == "eager"
         attention_interface: Callable = eager_attention_forward
-        print(self.config._attn_implementation, query_states.shape)
+        #print(self.config._attn_implementation, query_states.shape)
         if self.config._attn_implementation != "eager":
             if self.config._attn_implementation == "sdpa" and (output_attentions or head_mask is not None):
                 using_eager = True
@@ -381,7 +381,7 @@ class GPT2MLP(nn.Module):
         u, v = torch.chunk(hidden_states, 2, dim=-1)
         #hidden_states = self.c_fc(hidden_states)
         hidden_states = u * self.act(v)
-        #hidden_states = self.act(hidden_states)
+       # hidden_states = self.act(hidden_states)
         hidden_states = self.c_proj(hidden_states)
         hidden_states = self.dropout(hidden_states)
         return hidden_states
@@ -391,7 +391,8 @@ class GPT2Block(nn.Module):
     def __init__(self, config, layer_idx=None):
         super().__init__()
         hidden_size = config.hidden_size
-        inner_dim = config.n_inner if config.n_inner is not None else 4 * hidden_size
+        #inner_dim = config.n_inner if config.n_inner is not None else 4 * hidden_size
+        inner_dim = config.n_inner if config.n_inner is not None else 8 * hidden_size // 3
 
         self.ln_1 = nn.LayerNorm(hidden_size, eps=config.layer_norm_epsilon)
         self.attn = GPT2Attention(config=config, layer_idx=layer_idx)
