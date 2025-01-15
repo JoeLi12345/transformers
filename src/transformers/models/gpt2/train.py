@@ -32,7 +32,7 @@ from transformers import GPT2Model, GPT2LMHeadModel, GPT2Config
 # -----------------------------------------------------------------------------
 # default config values designed to train a gpt2 (124M) on OpenWebText
 # I/O
-out_dir = 'out_2'
+out_dir = 'out_test_grad'
 eval_interval = 2000
 log_interval = 1
 eval_iters = 200
@@ -42,7 +42,7 @@ init_from = 'scratch' # 'scratch' or 'resume' or 'gpt2*'
 # wandb logging
 wandb_log = True # disabled by default
 wandb_project = 'owt'
-wandb_run_name = 'gpt2_2' # 'run' + str(time.time())
+wandb_run_name = 'gpt2_test_grad' # 'run' + str(time.time())
 # data
 dataset = 'openwebtext'
 total_batch_size = 524288
@@ -311,7 +311,7 @@ while True:
     # clip the gradient
     if grad_clip != 0.0:
         scaler.unscale_(optimizer)
-        torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
+        norm = torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
     # step the optimizer and scaler if training in fp16
     scaler.step(optimizer)
     scaler.update()
@@ -327,7 +327,7 @@ while True:
         # scale up to undo the division above, approximating the true total loss (exact would have been a sum)
         lossf = loss.item() * gradient_accumulation_steps
         tokens_per_sec = total_batch_size / dt
-        print(f"iter {iter_num}: loss {lossf:.4f}, time {dt*1000:.2f}ms, lr {lr}, tok/sec: {tokens_per_sec}")
+        print(f"iter {iter_num}: loss {lossf:.4f}, time {dt*1000:.2f}ms, lr {lr}, norm: {norm: .4f}, tok/sec: {tokens_per_sec}")
     iter_num += 1
     local_iter_num += 1
 
