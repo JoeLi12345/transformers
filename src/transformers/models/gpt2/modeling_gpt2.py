@@ -305,8 +305,14 @@ class GPT2Attention(nn.Module):
         value_states = value_states.view(shape_kv).transpose(1, 2)
 
 # APPLY ROTARY POSITION EMBEDDING HERE
+        query_states = query_states.transpose(1, 2)
+        key_states = key_states.transpose(1, 2)
+
         query_states = self.rpe(query_states)
-        key_states = self.rpe(query_states)
+        key_states = self.rpe(key_states)
+
+        query_states = query_states.transpose(1, 2)
+        key_states = key_states.transpose(1, 2)
 
         if layer_past is not None:
             past_key, past_value = layer_past

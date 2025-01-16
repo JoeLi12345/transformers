@@ -32,7 +32,7 @@ from transformers import GPT2Model, GPT2LMHeadModel, GPT2Config
 # -----------------------------------------------------------------------------
 # default config values designed to train a gpt2 (124M) on OpenWebText
 # I/O
-out_dir = 'out_test_grad'
+out_dir = 'out_good_gpt2_rope'
 eval_interval = 2000
 log_interval = 1
 eval_iters = 200
@@ -42,7 +42,7 @@ init_from = 'scratch' # 'scratch' or 'resume' or 'gpt2*'
 # wandb logging
 wandb_log = True # disabled by default
 wandb_project = 'owt'
-wandb_run_name = 'gpt2_test_grad' # 'run' + str(time.time())
+wandb_run_name = 'gpt2_modify_rope_test(GOOD)' # 'run' + str(time.time())
 # data
 dataset = 'openwebtext'
 total_batch_size = 524288

@@ -112,6 +112,16 @@ def load_tf_weights_in_ngpt(model, config, ngpt_checkpoint_path):
         pointer.data = torch.from_numpy(array)
     return model
 
+'''
+ADD normalization function
+'''
+def justnorm(x):
+    #return F.normalize(x, p=2, dim=-1)
+    res = x / x.norm(p=2, dim=-1, keepdim=True)
+    return res
+
+def bad_function(*args):
+    raise RuntimeError("no LayerNorms and should not be called.")
 
 def eager_attention_forward(module, query, key, value, attention_mask, head_mask=None, **kwargs):
     attn_weights = torch.matmul(query, key.transpose(-1, -2))
@@ -202,6 +212,13 @@ class NgptAttention(nn.Module):
         self.is_causal = True
 
         self.pruned_heads = set()
+
+        '''
+        ADD SQK SCALING PARAMETER FROM 2.3.2
+        '''
+        self.sqk_init_value = 1.0       
+        self.sqk_init_scaling = config.base_scale
+        self.sqk = torch.nn.Parameter(self.sqk_init_scaling*torch.ones(config.n_embd, dtype=torch.float32))
 
     def prune_heads(self, heads):
         if len(heads) == 0:
@@ -305,8 +322,27 @@ class NgptAttention(nn.Module):
         value_states = value_states.view(shape_kv).transpose(1, 2)
 
 # APPLY ROTARY POSITION EMBEDDING HERE
+        query_states = query_states.transpose(1, 2)
+        key_states = key_states.transpose(1, 2)
+
         query_states = self.rpe(query_states)
-        key_states = self.rpe(query_states)
+        key_states = self.rpe(key_states)
+
+        query_states = query_states.transpose(1, 2)
+        key_states = key_states.transpose(1, 2)
+
+        '''
+        ADD 2.3.2 SCALING PARAMETER
+        '''
+        query_states = query_states.transpose(1, 2)
+        key_states = key_states.transpose(1, 2)
+
+        sqk = (self.sqk * (self.sqk_init_value/self.sqk_init_scaling)).view(1, 1, self.num_heads, self.head_dim)
+        query_states = sqk * justnorm(query_states)
+        key_states = sqk * justnorm(key_states)
+
+        query_states = query_states.transpose(1, 2)
+        key_states = key_states.transpose(1, 2)
 
         if layer_past is not None:
             past_key, past_value = layer_past
@@ -351,6 +387,7 @@ class NgptAttention(nn.Module):
                 head_mask=head_mask,
                 dropout=self.attn_dropout.p if self.training else 0.0,
                 is_causal=is_causal,
+                scale = (float(self.head_dim) ** 0.5), #SOFTMAX SCALING 2.3.2
                 **kwargs,
             )
 
@@ -369,17 +406,32 @@ class NgptMLP(nn.Module):
     def __init__(self, intermediate_size, config):
         super().__init__()
         embed_dim = config.hidden_size
+        self.config = config
         #self.c_fc = Conv1D(intermediate_size, embed_dim)
         self.c_fc = Conv1D(2*intermediate_size, embed_dim)
         self.c_proj = Conv1D(embed_dim, intermediate_size)
         self.act = ACT2FN[config.activation_function]
         self.dropout = nn.Dropout(config.resid_pdrop)
+        
+        '''
+        ADD u, v scaling params in SECTION 2.4.2
+        '''
+        self.suv_init_value = 1.0
+        self.suv_init_scaling = 1.0
+        self.su = torch.nn.Parameter(self.suv_init_scaling*torch.ones(intermediate_size, dtype=torch.float32))
+        self.sv = torch.nn.Parameter(self.suv_init_scaling*torch.ones(intermediate_size, dtype=torch.float32))
 
     def forward(self, hidden_states: Optional[Tuple[torch.FloatTensor]]) -> torch.FloatTensor:
         hidden_states = self.c_fc(hidden_states)
 #IMPLEMENT SWIGLU
         u, v = torch.chunk(hidden_states, 2, dim=-1)
         #hidden_states = self.c_fc(hidden_states)
+        '''
+        IMPLEMENT SECTION 2.4.2
+        '''
+        u = self.su * (self.suv_init_value/self.suv_init_scaling)
+        v = self.sv * (self.suv_init_value/self.suv_init_scaling) * (self.config.hidden_size ** 0.5)
+
         hidden_states = u * self.act(v)
        # hidden_states = self.act(hidden_states)
         hidden_states = self.c_proj(hidden_states)
@@ -394,15 +446,33 @@ class NgptBlock(nn.Module):
         #inner_dim = config.n_inner if config.n_inner is not None else 4 * hidden_size
         inner_dim = config.n_inner if config.n_inner is not None else 8 * hidden_size // 3
 
-        self.ln_1 = nn.LayerNorm(hidden_size, eps=config.layer_norm_epsilon)
+
+        # REMOVE LAYER NORM
+        #self.ln_1 = nn.LayerNorm(hidden_size, eps=config.layer_norm_epsilon)
+        self.ln_1 = bad_function
         self.attn = NgptAttention(config=config, layer_idx=layer_idx)
-        self.ln_2 = nn.LayerNorm(hidden_size, eps=config.layer_norm_epsilon)
+        #self.ln_2 = nn.LayerNorm(hidden_size, eps=config.layer_norm_epsilon)
+        self.ln_2 = bad_function
 
         if config.add_cross_attention:
             self.crossattention = NgptAttention(config=config, is_cross_attention=True, layer_idx=layer_idx)
-            self.ln_cross_attn = nn.LayerNorm(hidden_size, eps=config.layer_norm_epsilon)
+
+            # REMOVE LAYERNORM
+            #self.ln_cross_attn = nn.LayerNorm(hidden_size, eps=config.layer_norm_epsilon)
+            self.ln_cross_attn = bad_function
 
         self.mlp = NgptMLP(inner_dim, config)
+
+        '''
+        ADD ALPHA PARAMETERS IN SECTION 2.2.2 OF THE PAPER
+        '''
+        self.attn_alpha_init_value = 0.05
+        self.attn_alpha_init_scaling = config.base_scale
+        self.attn_alpha = torch.nn.Parameter(self.attn_alpha_init_scaling*torch.ones(config.n_embd, dtype=torch.float32))
+
+        self.mlp_alpha_init_value = 0.05
+        self.mlp_alpha_init_scaling = config.base_scale
+        self.mlp_alpha = torch.nn.Parameter(self.mlp_alpha_init_scaling*torch.ones(config.n_embd, dtype=torch.float32))
 
     def forward(
         self,
@@ -416,7 +486,10 @@ class NgptBlock(nn.Module):
         output_attentions: Optional[bool] = False,
     ) -> Union[Tuple[torch.Tensor], Optional[Tuple[torch.Tensor, Tuple[torch.FloatTensor, ...]]]]:
         residual = hidden_states
-        hidden_states = self.ln_1(hidden_states)
+        '''
+        REMOVE LAYERNORM
+        '''
+        #hidden_states = self.ln_1(hidden_states)
         attn_outputs = self.attn(
             hidden_states,
             layer_past=layer_past,
@@ -428,7 +501,19 @@ class NgptBlock(nn.Module):
         attn_output = attn_outputs[0]  # output_attn: a, present, (attentions)
         outputs = attn_outputs[1:]
         # residual connection
-        hidden_states = attn_output + residual
+        #hidden_states = attn_output + residual
+        
+        '''
+        UPDATED CODE FOR SECTION 2.2.2
+        '''
+        lr = self.attn_alpha * (self.attn_alpha_init_value / self.attn_alpha_init_scaling)
+        lr = torch.abs(lr)
+
+        A_norm = justnorm(hidden_states) # normally, normalization is not needed
+        B_norm = justnorm(attn_output)
+
+        res = A_norm + lr * (B_norm - A_norm)
+        h = justnorm(res)
 
         if encoder_hidden_states is not None:
             # add one self-attention block for cross-attention
@@ -453,10 +538,26 @@ class NgptBlock(nn.Module):
             outputs = outputs + cross_attn_outputs[2:]  # add cross attentions if we output attention weights
 
         residual = hidden_states
-        hidden_states = self.ln_2(hidden_states)
+        '''
+        REMOVE LAYERNORM
+        '''
+        #hidden_states = self.ln_2(hidden_states)
         feed_forward_hidden_states = self.mlp(hidden_states)
         # residual connection
-        hidden_states = residual + feed_forward_hidden_states
+        #hidden_states = residual + feed_forward_hidden_states
+        
+        '''
+        UPDATED CODE FOR SECTION 2.2.2
+        '''
+        lr = self.mlp_alpha * (self.mlp_alpha_init_value / self.mlp_alpha_init_scaling)
+        lr = torch.abs(lr)
+
+        A_norm = justnorm(hidden_states) # normally, normalization is not needed
+        B_norm = justnorm(feed_forward_hidden_states)
+
+        #res = (1.0 - lr) * A_norm + lr * B_norm
+        res = A_norm + lr * (B_norm - A_norm)
+        h = justnorm(res)
 
         if use_cache:
             outputs = (hidden_states,) + outputs
@@ -707,7 +808,10 @@ class NgptModel(NgptPreTrainedModel):
 
         self.drop = nn.Dropout(config.embd_pdrop)
         self.h = nn.ModuleList([NgptBlock(config, layer_idx=i) for i in range(config.num_hidden_layers)])
-        self.ln_f = nn.LayerNorm(self.embed_dim, eps=config.layer_norm_epsilon)
+
+# REMOVE LAYER NORM
+        #self.ln_f = nn.LayerNorm(self.embed_dim, eps=config.layer_norm_epsilon)
+        self.ln_f = bad_function
 
         # Model parallel
         self.model_parallel = False
@@ -961,7 +1065,11 @@ class NgptModel(NgptPreTrainedModel):
                     if i == v[-1] and "cuda:" + str(k) != self.last_device:
                         hidden_states = hidden_states.to("cuda:" + str(k + 1))
 
-        hidden_states = self.ln_f(hidden_states)
+
+        '''
+        REMOVE LAYER NORM
+        '''
+        #hidden_states = self.ln_f(hidden_states)
 
         hidden_states = hidden_states.view(output_shape)
         # Add last hidden state
@@ -998,8 +1106,8 @@ class NgptLMHeadModel(NgptPreTrainedModel, GenerationMixin):
         super().__init__(config)
         self.transformer = NgptModel(config)
         self.lm_head = nn.Linear(config.n_embd, config.vocab_size, bias=False)
-        print("Hello")
-        import sys; sys.exit(0)
+
+        self.test = Conv1D(10, 20)
 
         # Model parallel
         self.model_parallel = False
@@ -1007,6 +1115,13 @@ class NgptLMHeadModel(NgptPreTrainedModel, GenerationMixin):
 
         # Initialize weights and apply final processing
         self.post_init()
+
+        '''
+        SECTION 2.1: CUSTOM SCALING
+        '''
+        self.sz_init_value = 1.00
+        self.sz_init_scaling = config.base_scale
+        self.sz = torch.nn.Parameter(self.sz_init_scaling*torch.ones(config.vocab_size, dtype=torch.float32))
 
     @add_start_docstrings(PARALLELIZE_DOCSTRING)
     def parallelize(self, device_map=None):
@@ -1099,6 +1214,11 @@ class NgptLMHeadModel(NgptPreTrainedModel, GenerationMixin):
             hidden_states = hidden_states.to(self.lm_head.weight.device)
 
         lm_logits = self.lm_head(hidden_states)
+        '''
+        IMPLEMENT SECTION 2.1
+        '''
+        sz = self.sz * (self.sz_init_value/self.sz_init_scaling)
+        lm_logits = sz * lm_logits
 
         loss = None
         if labels is not None:

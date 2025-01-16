@@ -190,6 +190,7 @@ class NgptConfig(PretrainedConfig):
         ADD BASE SCALING FACTOR (section 2.2.2)
         '''
         self.base_scale = 1.0 / (self.n_embd ** 0.5)
+        self.initializer_range = self.base_scale
 
         super().__init__(bos_token_id=bos_token_id, eos_token_id=eos_token_id, **kwargs)
 
