@@ -32,7 +32,7 @@ from transformers import NgptModel, NgptLMHeadModel, NgptConfig
 # -----------------------------------------------------------------------------
 # default config values designed to train a Ngpt (124M) on OpenWebText
 # I/O
-overall_name = "ngpt_first_run"
+overall_name = "ngpt_0.5B"
 
 out_dir = 'out' + overall_name
 eval_interval = 2000
@@ -42,19 +42,19 @@ eval_only = False # if True, script exits right after the first eval
 always_save_checkpoint = True # if True, always save a checkpoint after each eval
 init_from = 'scratch' # 'scratch' or 'resume' or 'Ngpt*'
 # wandb logging
-wandb_log = False # disabled by default
+wandb_log = True # disabled by default
 wandb_project = 'owt'
 wandb_run_name = overall_name # 'run' + str(time.time())
 # data
 dataset = 'openwebtext'
 total_batch_size = 524288
-batch_size = 64 # if gradient_accumulation_steps > 1, this is the micro-batch size
+batch_size = 8 # if gradient_accumulation_steps > 1, this is the micro-batch size
 block_size = 1024
 gradient_accumulation_steps = total_batch_size // (batch_size * block_size) # used to simulate larger batch sizes
 
 # adamw optimizer
-learning_rate = 6e-4 # max learning rate
-max_iters = 600000 # total number of training iterations
+learning_rate = 15e-4 # max learning rate
+max_iters = 200000 # total number of training iterations
 weight_decay = 0.0
 beta1 = 0.9
 beta2 = 0.95
@@ -62,7 +62,7 @@ grad_clip = 1.0 # clip gradients at this value, or disable if == 0.0
 # learning rate decay settings
 decay_lr = True # whether to decay the learning rate
 warmup_iters = 0 # how many steps to warm up for 
-lr_decay_iters = 600000 # should be ~= max_iters per Chinchilla
+lr_decay_iters = 200000 # should be ~= max_iters per Chinchilla
 min_lr = 0 # minimum learning rate, should be ~= learning_rate/10 per Chinchilla
 # DDP settings
 backend = 'nccl' # 'nccl', 'gloo', etc.
@@ -156,7 +156,7 @@ best_val_loss = 1e9
 '''model_args = dict(n_layer=n_layer, n_head=n_head, n_embd=n_embd, block_size=block_size,
                   bias=bias, vocab_size=None, dropout=dropout) # start with model_args from command line'''
 
-model_config = NgptConfig(vocab_size=50304)
+model_config = NgptConfig(vocab_size=50304, n_embd=1024, n_layer=24, n_head=16, n_inner=4096)
 if init_from == 'scratch':
     # init a new model from scratch
     if master_process:
@@ -280,9 +280,9 @@ def normalize_matrices():
         block = raw_model.transformer.h[layer_idx]
 
         #print(block.attn.c_attn.weight.data.shape)
-        block.attn.c_attn.weight.data.copy_(justnorm(block.attn.c_attn.weight.data, 0))
+        block.attn.c_attn.weight.data.copy_(justnorm(block.attn.c_attn.weight.data, 0)) #n_embd, 3*n_embd
         #print(block.attn.c_proj.weight.data.shape)
-        block.attn.c_proj.weight.data.copy_(justnorm(block.attn.c_proj.weight.data, 1))
+        block.attn.c_proj.weight.data.copy_(justnorm(block.attn.c_proj.weight.data, 1)) #n_proj, n_embd
 
         #print(block.mlp.c_fc.weight.data.shape)
         #print(block.mlp.c_proj.weight.data.shape)

@@ -218,7 +218,7 @@ class NgptAttention(nn.Module):
         '''
         self.sqk_init_value = 1.0       
         self.sqk_init_scaling = config.base_scale
-        #self.sqk = torch.nn.Parameter(self.sqk_init_scaling*torch.ones(config.n_embd, dtype=torch.float32))
+        self.sqk = torch.nn.Parameter(self.sqk_init_scaling*torch.ones(config.n_embd, dtype=torch.float32))
 
     def prune_heads(self, heads):
         if len(heads) == 0:
@@ -337,9 +337,9 @@ class NgptAttention(nn.Module):
         query_states = query_states.transpose(1, 2)
         key_states = key_states.transpose(1, 2)
 
-        '''sqk = (self.sqk * (self.sqk_init_value/self.sqk_init_scaling)).view(1, 1, self.num_heads, self.head_dim)
+        sqk = (self.sqk * (self.sqk_init_value/self.sqk_init_scaling)).view(1, 1, self.num_heads, self.head_dim)
         query_states = sqk * justnorm(query_states)
-        key_states = sqk * justnorm(key_states)'''
+        key_states = sqk * justnorm(key_states)
 
         query_states = query_states.transpose(1, 2)
         key_states = key_states.transpose(1, 2)
@@ -419,8 +419,8 @@ class NgptMLP(nn.Module):
         '''
         self.suv_init_value = 1.0
         self.suv_init_scaling = 1.0
-        #self.su = torch.nn.Parameter(self.suv_init_scaling*torch.ones(intermediate_size, dtype=torch.float32))
-        #self.sv = torch.nn.Parameter(self.suv_init_scaling*torch.ones(intermediate_size, dtype=torch.float32))
+        self.su = torch.nn.Parameter(self.suv_init_scaling*torch.ones(intermediate_size, dtype=torch.float32))
+        self.sv = torch.nn.Parameter(self.suv_init_scaling*torch.ones(intermediate_size, dtype=torch.float32))
 
     def forward(self, hidden_states: Optional[Tuple[torch.FloatTensor]]) -> torch.FloatTensor:
         hidden_states = self.c_fc(hidden_states)
@@ -430,10 +430,10 @@ class NgptMLP(nn.Module):
         '''
         IMPLEMENT SECTION 2.4.2
         '''
-        '''su = self.su * (self.suv_init_value/self.suv_init_scaling)
+        su = self.su * (self.suv_init_value/self.suv_init_scaling)
         sv = self.sv * (self.suv_init_value/self.suv_init_scaling) * (self.config.hidden_size ** 0.5)
         u = u * su
-        v = v * sv'''
+        v = v * sv
 
         hidden_states = u * self.act(v)
        # hidden_states = self.act(hidden_states)
@@ -471,11 +471,11 @@ class NgptBlock(nn.Module):
         '''
         self.attn_alpha_init_value = 0.05
         self.attn_alpha_init_scaling = config.base_scale
-        #self.attn_alpha = torch.nn.Parameter(self.attn_alpha_init_scaling*torch.ones(config.n_embd, dtype=torch.float32))
+        self.attn_alpha = torch.nn.Parameter(self.attn_alpha_init_scaling*torch.ones(config.n_embd, dtype=torch.float32))
 
         self.mlp_alpha_init_value = 0.05
         self.mlp_alpha_init_scaling = config.base_scale
-        #self.mlp_alpha = torch.nn.Parameter(self.mlp_alpha_init_scaling*torch.ones(config.n_embd, dtype=torch.float32))
+        self.mlp_alpha = torch.nn.Parameter(self.mlp_alpha_init_scaling*torch.ones(config.n_embd, dtype=torch.float32))
 
     def forward(
         self,
@@ -504,19 +504,19 @@ class NgptBlock(nn.Module):
         attn_output = attn_outputs[0]  # output_attn: a, present, (attentions)
         outputs = attn_outputs[1:]
         # residual connection
-        hidden_states = attn_output + residual
+        #hidden_states = attn_output + residual
         
         '''
         UPDATED CODE FOR SECTION 2.2.2
         '''
-        '''lr = self.attn_alpha * (self.attn_alpha_init_value / self.attn_alpha_init_scaling)
+        lr = self.attn_alpha * (self.attn_alpha_init_value / self.attn_alpha_init_scaling)
         lr = torch.abs(lr)
 
         A_norm = justnorm(hidden_states) # normally, normalization is not needed
         B_norm = justnorm(attn_output)
 
         res = A_norm + lr * (B_norm - A_norm)
-        h = justnorm(res)'''
+        hidden_states = justnorm(res)
 
         if encoder_hidden_states is not None:
             # add one self-attention block for cross-attention
@@ -547,20 +547,19 @@ class NgptBlock(nn.Module):
         #hidden_states = self.ln_2(hidden_states)
         feed_forward_hidden_states = self.mlp(hidden_states)
         # residual connection
-        hidden_states = residual + feed_forward_hidden_states
+        #hidden_states = residual + feed_forward_hidden_states
         
         '''
         UPDATED CODE FOR SECTION 2.2.2
         '''
-        '''lr = self.mlp_alpha * (self.mlp_alpha_init_value / self.mlp_alpha_init_scaling)
+        lr = self.mlp_alpha * (self.mlp_alpha_init_value / self.mlp_alpha_init_scaling)
         lr = torch.abs(lr)
 
         A_norm = justnorm(hidden_states) # normally, normalization is not needed
         B_norm = justnorm(feed_forward_hidden_states)
 
-        #res = (1.0 - lr) * A_norm + lr * B_norm
         res = A_norm + lr * (B_norm - A_norm)
-        h = justnorm(res)'''
+        hidden_states = justnorm(res)
 
         if use_cache:
             outputs = (hidden_states,) + outputs
@@ -1110,8 +1109,6 @@ class NgptLMHeadModel(NgptPreTrainedModel, GenerationMixin):
         self.transformer = NgptModel(config)
         self.lm_head = nn.Linear(config.n_embd, config.vocab_size, bias=False)
 
-        self.test = Conv1D(10, 20)
-
         # Model parallel
         self.model_parallel = False
         self.device_map = None
@@ -1124,7 +1121,7 @@ class NgptLMHeadModel(NgptPreTrainedModel, GenerationMixin):
         '''
         self.sz_init_value = 1.00
         self.sz_init_scaling = config.base_scale
-        #self.sz = torch.nn.Parameter(self.sz_init_scaling*torch.ones(config.vocab_size, dtype=torch.float32))
+        self.sz = torch.nn.Parameter(self.sz_init_scaling*torch.ones(config.vocab_size, dtype=torch.float32))
 
     @add_start_docstrings(PARALLELIZE_DOCSTRING)
     def parallelize(self, device_map=None):
@@ -1220,8 +1217,8 @@ class NgptLMHeadModel(NgptPreTrainedModel, GenerationMixin):
         '''
         IMPLEMENT SECTION 2.1
         '''
-        #sz = self.sz * (self.sz_init_value/self.sz_init_scaling)
-        #lm_logits = sz * lm_logits
+        sz = self.sz * (self.sz_init_value/self.sz_init_scaling)
+        lm_logits = sz * lm_logits
 
         loss = None
         if labels is not None:
