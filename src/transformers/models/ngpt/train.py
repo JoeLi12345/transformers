@@ -32,7 +32,7 @@ from transformers import NgptModel, NgptLMHeadModel, NgptConfig
 # -----------------------------------------------------------------------------
 # default config values designed to train a Ngpt (124M) on OpenWebText
 # I/O
-overall_name = "ngpt_0.5B"
+overall_name = "ngpt_0.5B_100k"
 
 out_dir = 'out' + overall_name
 eval_interval = 2000
@@ -48,13 +48,13 @@ wandb_run_name = overall_name # 'run' + str(time.time())
 # data
 dataset = 'openwebtext'
 total_batch_size = 524288
-batch_size = 8 # if gradient_accumulation_steps > 1, this is the micro-batch size
+batch_size = 4 # if gradient_accumulation_steps > 1, this is the micro-batch size
 block_size = 1024
 gradient_accumulation_steps = total_batch_size // (batch_size * block_size) # used to simulate larger batch sizes
 
 # adamw optimizer
-learning_rate = 15e-4 # max learning rate
-max_iters = 200000 # total number of training iterations
+learning_rate = 30e-4 # max learning rate
+max_iters = 100000 # total number of training iterations
 weight_decay = 0.0
 beta1 = 0.9
 beta2 = 0.95
@@ -62,7 +62,7 @@ grad_clip = 1.0 # clip gradients at this value, or disable if == 0.0
 # learning rate decay settings
 decay_lr = True # whether to decay the learning rate
 warmup_iters = 0 # how many steps to warm up for 
-lr_decay_iters = 200000 # should be ~= max_iters per Chinchilla
+lr_decay_iters = 100000 # should be ~= max_iters per Chinchilla
 min_lr = 0 # minimum learning rate, should be ~= learning_rate/10 per Chinchilla
 # DDP settings
 backend = 'nccl' # 'nccl', 'gloo', etc.

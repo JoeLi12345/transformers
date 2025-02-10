@@ -1102,12 +1102,14 @@ class NgptModel(NgptPreTrainedModel):
     Ngpt_START_DOCSTRING,
 )
 class NgptLMHeadModel(NgptPreTrainedModel, GenerationMixin):
-    _tied_weights_keys = ["lm_head.weight"]
+    #_tied_weights_keys = ["lm_head.weight"]
+    _tied_weights_keys = []
 
     def __init__(self, config):
         super().__init__(config)
         self.transformer = NgptModel(config)
         self.lm_head = nn.Linear(config.n_embd, config.vocab_size, bias=False)
+        self.lm_head_2 = nn.Linear(config.n_embd, config.vocab_size, bias=False)
 
         # Model parallel
         self.model_parallel = False
@@ -1139,7 +1141,8 @@ class NgptLMHeadModel(NgptPreTrainedModel, GenerationMixin):
         )
         assert_device_map(self.device_map, len(self.transformer.h))
         self.transformer.parallelize(self.device_map)
-        self.lm_head = self.lm_head.to(self.transformer.first_device)
+        #self.lm_head = self.lm_head.to(self.transformer.first_device)
+        self.lm_head_2 = self.lm_head_2.to(self.transformer.first_device)
         self.model_parallel = True
 
     @add_start_docstrings(DEPARALLELIZE_DOCSTRING)
@@ -1150,7 +1153,8 @@ class NgptLMHeadModel(NgptPreTrainedModel, GenerationMixin):
         )
         self.transformer.deparallelize()
         self.transformer = self.transformer.to("cpu")
-        self.lm_head = self.lm_head.to("cpu")
+        #self.lm_head = self.lm_head.to("cpu")
+        self.lm_head_2 = self.lm_head.to("cpu")
         self.model_parallel = False
         torch.cuda.empty_cache()
 
@@ -1211,9 +1215,10 @@ class NgptLMHeadModel(NgptPreTrainedModel, GenerationMixin):
         # Set device for model parallelism
         if self.model_parallel:
             torch.cuda.set_device(self.transformer.first_device)
-            hidden_states = hidden_states.to(self.lm_head.weight.device)
+            #hidden_states = hidden_states.to(self.lm_head.weight.device)
+            hidden_states = hidden_states.to(self.lm_head_2.weight.device)
 
-        lm_logits = self.lm_head(hidden_states)
+        lm_logits = self.lm_head_2(hidden_states)
         '''
         IMPLEMENT SECTION 2.1
         '''
@@ -1269,7 +1274,8 @@ input sequence).
     Ngpt_START_DOCSTRING,
 )
 class NgptDoubleHeadsModel(NgptPreTrainedModel, GenerationMixin):
-    _tied_weights_keys = ["lm_head.weight"]
+    #_tied_weights_keys = ["lm_head.weight"]
+    _tied_weights_keys = []
 
     def __init__(self, config):
         super().__init__(config)

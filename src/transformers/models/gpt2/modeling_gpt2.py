@@ -1004,6 +1004,7 @@ class GPT2LMHeadModel(GPT2PreTrainedModel, GenerationMixin):
         super().__init__(config)
         self.transformer = GPT2Model(config)
         self.lm_head = nn.Linear(config.n_embd, config.vocab_size, bias=False)
+        self.lm_head_2 = nn.Linear(config.n_embd, config.vocab_size, bias=False)
 
         # Model parallel
         self.model_parallel = False
@@ -1102,7 +1103,7 @@ class GPT2LMHeadModel(GPT2PreTrainedModel, GenerationMixin):
             torch.cuda.set_device(self.transformer.first_device)
             hidden_states = hidden_states.to(self.lm_head.weight.device)
 
-        lm_logits = self.lm_head(hidden_states)
+        lm_logits = self.lm_head_2(hidden_states)
 
         loss = None
         if labels is not None:

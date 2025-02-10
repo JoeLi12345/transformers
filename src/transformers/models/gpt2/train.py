@@ -29,10 +29,12 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.distributed import init_process_group, destroy_process_group
 from transformers import GPT2Model, GPT2LMHeadModel, GPT2Config
 
+
+overall_name = "gpt2_0.5B_4k_20k"
 # -----------------------------------------------------------------------------
 # default config values designed to train a gpt2 (124M) on OpenWebText
 # I/O
-out_dir = 'out_good_gpt2_rope'
+out_dir = 'out_' + overall_name
 eval_interval = 2000
 log_interval = 1
 eval_iters = 200
@@ -42,17 +44,17 @@ init_from = 'scratch' # 'scratch' or 'resume' or 'gpt2*'
 # wandb logging
 wandb_log = True # disabled by default
 wandb_project = 'owt'
-wandb_run_name = 'gpt2_modify_rope_test(GOOD)' # 'run' + str(time.time())
+wandb_run_name = overall_name
 # data
 dataset = 'openwebtext'
 total_batch_size = 524288
-batch_size = 64 # if gradient_accumulation_steps > 1, this is the micro-batch size
-block_size = 1024
+batch_size = 8 # if gradient_accumulation_steps > 1, this is the micro-batch size
+block_size = 4096
 gradient_accumulation_steps = total_batch_size // (batch_size * block_size) # used to simulate larger batch sizes
 
 # adamw optimizer
-learning_rate = 6e-4 # max learning rate
-max_iters = 600000 # total number of training iterations
+learning_rate = 30e-4 # max learning rate
+max_iters = 20000 # total number of training iterations
 weight_decay = 0.1
 beta1 = 0.9
 beta2 = 0.95
@@ -60,7 +62,7 @@ grad_clip = 1.0 # clip gradients at this value, or disable if == 0.0
 # learning rate decay settings
 decay_lr = True # whether to decay the learning rate
 warmup_iters = 2000 # how many steps to warm up for
-lr_decay_iters = 600000 # should be ~= max_iters per Chinchilla
+lr_decay_iters = 20000 # should be ~= max_iters per Chinchilla
 min_lr = 0 # minimum learning rate, should be ~= learning_rate/10 per Chinchilla
 # DDP settings
 backend = 'nccl' # 'nccl', 'gloo', etc.
@@ -159,7 +161,7 @@ if init_from == 'scratch':
         print("Initializing a new model from scratch")
     # determine the vocab size we'll use for from-scratch training
 
-    model = GPT2LMHeadModel(GPT2Config(vocab_size=50304))
+    model = GPT2LMHeadModel(GPT2Config(vocab_size=50304, n_positions=block_size, n_embd=1024, n_layer=24, n_head=16, n_inner=4096))
 '''
 elif init_from == 'resume':
     print(f"Resuming training from {out_dir}")
