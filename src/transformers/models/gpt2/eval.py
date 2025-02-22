@@ -29,13 +29,16 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.distributed import init_process_group, destroy_process_group
 from transformers import GPT2Model, GPT2LMHeadModel, GPT2Config
 
+from transformers import AutoTokenizer, AutoModelForCausalLM
+import lm_eval
+from lm_eval.models.huggingface import HFLM
 
-overall_name = "gpt2_llama_0.5B_4k_100k"
+overall_name = "gpt2_llama_0.5B_1k_25k"
 # -----------------------------------------------------------------------------
 # default config values designed to train a gpt2 (124M) on OpenWebText
 # I/O
 out_dir = 'out_' + overall_name
-eval_interval = 1000
+eval_interval = 2000
 log_interval = 1
 eval_iters = 200
 eval_only = False # if True, script exits right after the first eval
@@ -48,15 +51,13 @@ wandb_run_name = overall_name
 # data
 dataset = 'openwebtext_llama'
 total_batch_size = 524288
-global_batch = 512
-batch_size = 8 # if gradient_accumulation_steps > 1, this is the micro-batch size
-block_size = 4096
-#gradient_accumulation_steps = total_batch_size // (batch_size * block_size) # used to simulate larger batch sizes
-gradient_accumulation_steps = global_batch // batch_size
+batch_size = 16 # if gradient_accumulation_steps > 1, this is the micro-batch size
+block_size = 1024
+gradient_accumulation_steps = total_batch_size // (batch_size * block_size) # used to simulate larger batch sizes
 
 # adamw optimizer
-learning_rate = 30e-4 # max learning rate
-max_iters = 100000 # total number of training iterations
+learning_rate = 15e-4 # max learning rate
+max_iters = 400000 # total number of training iterations
 weight_decay = 0.1
 beta1 = 0.9
 beta2 = 0.95
@@ -64,7 +65,7 @@ grad_clip = 1.0 # clip gradients at this value, or disable if == 0.0
 # learning rate decay settings
 decay_lr = True # whether to decay the learning rate
 warmup_iters = 2000 # how many steps to warm up for
-lr_decay_iters = 100000 # should be ~= max_iters per Chinchilla
+lr_decay_iters = 400000 # should be ~= max_iters per Chinchilla
 min_lr = 0 # minimum learning rate, should be ~= learning_rate/10 per Chinchilla
 # DDP settings
 backend = 'nccl' # 'nccl', 'gloo', etc.
@@ -157,6 +158,33 @@ best_val_loss = 1e9
 # model init
 '''model_args = dict(n_layer=n_layer, n_head=n_head, n_embd=n_embd, block_size=block_size,
                   bias=bias, vocab_size=None, dropout=dropout) # start with model_args from command line'''
+
+model = GPT2LMHeadModel(GPT2Config(vocab_size=32000, n_positions=block_size, n_embd=1024, n_layer=24, n_head=16, n_inner=4096, bos_token_id=1, eos_token_id=2))
+ckpt_path = os.path.join(out_dir, 'ckpt.pt')
+checkpoint = torch.load(ckpt_path, map_location=device)
+state_dict = checkpoint['model']
+unwanted_prefix = '_orig_mod.'
+for k,v in list(state_dict.items()):
+    if k.startswith(unwanted_prefix):
+        state_dict[k[len(unwanted_prefix):]] = state_dict.pop(k)
+model.load_state_dict(state_dict)
+tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-2-7b-hf")
+
+lm_obj = HFLM(pretrained=model, batch_size=batch_size, tokenizer=tokenizer)
+task_manager = lm_eval.tasks.TaskManager()
+tasks=["hellaswag", "arc_easy", "winogrande", "wsc273", "lambada_openai"]
+results = lm_eval.simple_evaluate( # call simple_evaluate
+    model=lm_obj,
+    tasks=tasks,
+    task_manager=task_manager
+)
+
+print(overall_name)
+for task in tasks:
+    print(task, results["results"][task]["acc,none"])
+
+import sys; sys.exit(0)
+
 if init_from == 'scratch':
     # init a new model from scratch
     if master_process:
@@ -331,7 +359,7 @@ while True:
         # get loss as float. note: this is a CPU-GPU sync point
         # scale up to undo the division above, approximating the true total loss (exact would have been a sum)
         lossf = loss.item() * gradient_accumulation_steps
-        tokens_per_sec = tokens_per_iter / dt
+        tokens_per_sec = total_batch_size / dt
         print(f"iter {iter_num}: loss {lossf:.4f}, time {dt*1000:.2f}ms, lr {lr}, norm: {norm: .4f}, tok/sec: {tokens_per_sec}")
     iter_num += 1
     local_iter_num += 1

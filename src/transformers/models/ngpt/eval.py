@@ -35,7 +35,7 @@ from lm_eval.models.huggingface import HFLM
 # -----------------------------------------------------------------------------
 # default config values designed to train a Ngpt (124M) on OpenWebText
 # I/O
-overall_name = "ngpt_llama_0.5B_1k_200k"
+overall_name = "ngpt_llama_0.5B_1k_25k"
 
 out_dir = 'out' + overall_name
 eval_interval = 2000
@@ -174,16 +174,17 @@ tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-2-7b-hf")
 
 lm_obj = HFLM(pretrained=model, batch_size=batch_size, tokenizer=tokenizer)
 task_manager = lm_eval.tasks.TaskManager()
+tasks=["hellaswag", "arc_easy", "winogrande", "wsc273", "lambada_openai"]
 results = lm_eval.simple_evaluate( # call simple_evaluate
     model=lm_obj,
-    #tasks=["hellaswag", "arc_easy", "winogrande", "wsc273", "lambada_openai"],
-    tasks = ["arc_easy"],
+    tasks=tasks,
     task_manager=task_manager
 )
 
-print(results["results"].keys())
-print(results["results"]["arc_easy"].keys())
-print("arc_easy", results["results"]["arc_easy"]["acc,none"])
+print(overall_name)
+for task in tasks:
+    print(task, results["results"][task]["acc,none"])
+
 import sys; sys.exit(0)
 
 

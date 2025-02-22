@@ -32,7 +32,7 @@ from transformers import NgptModel, NgptLMHeadModel, NgptConfig
 # -----------------------------------------------------------------------------
 # default config values designed to train a Ngpt (124M) on OpenWebText
 # I/O
-overall_name = "ngpt_llama_0.5B_1k_200k"
+overall_name = "ngpt_llama_0.5B_4k_100k"
 
 out_dir = 'out' + overall_name
 eval_interval = 2000
@@ -48,13 +48,15 @@ wandb_run_name = overall_name # 'run' + str(time.time())
 # data
 dataset = 'openwebtext_llama'
 total_batch_size = 524288
-batch_size = 16 # if gradient_accumulation_steps > 1, this is the micro-batch size
-block_size = 1024
-gradient_accumulation_steps = total_batch_size // (batch_size * block_size) # used to simulate larger batch sizes
+global_batch = 512
+batch_size = 4 # if gradient_accumulation_steps > 1, this is the micro-batch size
+block_size = 4096
+#gradient_accumulation_steps = total_batch_size // (batch_size * block_size) # used to simulate larger batch sizes
+gradient_accumulation_steps = global_batch // batch_size
 
 # adamw optimizer
-learning_rate = 15e-4 # max learning rate
-max_iters = 200000 # total number of training iterations
+learning_rate = 30e-4 # max learning rate
+max_iters = 100000 # total number of training iterations
 weight_decay = 0.0
 beta1 = 0.9
 beta2 = 0.95
@@ -62,7 +64,7 @@ grad_clip = 1.0 # clip gradients at this value, or disable if == 0.0
 # learning rate decay settings
 decay_lr = True # whether to decay the learning rate
 warmup_iters = 0 # how many steps to warm up for 
-lr_decay_iters = 200000 # should be ~= max_iters per Chinchilla
+lr_decay_iters = 100000 # should be ~= max_iters per Chinchilla
 min_lr = 0 # minimum learning rate, should be ~= learning_rate/10 per Chinchilla
 # DDP settings
 backend = 'nccl' # 'nccl', 'gloo', etc.
@@ -362,7 +364,7 @@ while True:
         # get loss as float. note: this is a CPU-GPU sync point
         # scale up to undo the division above, approximating the true total loss (exact would have been a sum)
         lossf = loss.item() * gradient_accumulation_steps
-        tokens_per_sec = total_batch_size / dt
+        tokens_per_sec = tokens_per_iter / dt
         print(f"iter {iter_num}: loss {lossf:.4f}, time {dt*1000:.2f}ms, lr {lr}, norm: {norm: .4f}, tok/sec: {tokens_per_sec}")
     iter_num += 1
     local_iter_num += 1
